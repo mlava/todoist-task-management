@@ -1,0 +1,3 @@
+[data-tag^="ttt"] {
+    display: none !important;
+  }
