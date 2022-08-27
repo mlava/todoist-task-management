@@ -34,6 +34,9 @@ const config = {
     ]
 };
 
+let hashChange = undefined;
+let observer = undefined;
+
 export default {
     onload: ({ extensionAPI }) => {
         extensionAPI.settings.panel.create(config);
@@ -51,18 +54,11 @@ export default {
             callback: () => linkTodoistProject(),
         });
 
-        window.addEventListener('hashchange', async function (e) {
-            ready(initiateObserver());
-        });
-
-        function ready(fn) {
-            if (document.readyState === "complete" || document.readyState === "interactive") {
-                setTimeout(fn, 1);
-            } else {
-                document.addEventListener("DOMContentLoaded", fn);
-            }
-        }
-        ready(initiateObserver());
+        hashChange = async (e) => {
+            initiateObserver();
+        };
+        window.addEventListener('hashchange', hashChange);
+        initiateObserver;
 
         function initiateObserver() {
             const targetNode1 = document.getElementsByClassName("roam-main")[0];
@@ -78,7 +74,7 @@ export default {
                     }
                 }
             };
-            const observer = new MutationObserver(callback);
+            observer = new MutationObserver(callback);
             observer.observe(targetNode1, config);
             observer.observe(targetNode2, config);
         }
@@ -93,7 +89,7 @@ export default {
                 } else {
                     const myToken = extensionAPI.settings.get("ttt-token");
                     if (!extensionAPI.settings.get("ttt-import-header")) {
-                        TodoistHeader = "Today's tasks:";
+                        TodoistHeader = "Imported tasks";
                     } else {
                         TodoistHeader = extensionAPI.settings.get("ttt-import-header");
                     }
@@ -132,7 +128,6 @@ export default {
                         currentPageUID = info[0][0].uid;
                     }
                     importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID);
-                    initiateObserver();
                 }
             }
         }
@@ -225,7 +220,7 @@ export default {
                 } else {
                     const myToken = extensionAPI.settings.get("ttt-token");
                     if (!extensionAPI.settings.get("ttt-import-header")) {
-                        TodoistHeader = "Today's tasks:";
+                        TodoistHeader = "Imported tasks";
                     } else {
                         TodoistHeader = extensionAPI.settings.get("ttt-import-header");
                     }
@@ -300,6 +295,8 @@ export default {
         window.roamAlphaAPI.ui.commandPalette.removeCommand({
             label: 'Link to Todoist project via clipboard'
         });
+        window.removeEventListener('hashchange', hashChange);
+        observer.disconnect();
     }
 }
 
