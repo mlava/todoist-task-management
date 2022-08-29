@@ -156,13 +156,14 @@ export default {
                         alert("Your cursor must be within a block to create as a task in Todoist")
                     }
                     let q = `[:find (pull ?page
-                        [:node/title :block/string :block/uid :block/heading :block/props 
-                         :entity/attrs :block/open :block/text-align :children/view-type
+                        [:node/title :block/string :block/uid :children/view-type
                          :block/order {:block/children ...} {:block/parents ...}
                         ])
                      :where [?page :block/uid "${startBlock}"]  ]`;
                     var block = await window.roamAlphaAPI.q(q);
-
+                    let parentNumber = parseInt(block[0][0].parents.length) - 1;
+                    let parentUID = block[0][0].parents[parentNumber].uid;
+                    let blockOrder = parseInt(block[0][0].order) + 1;
                     var projectID;
                     var projectIDText = "projectID: ";
 
@@ -214,6 +215,7 @@ export default {
                             string: newTaskString.toString()
                         }
                     });
+                    await window.roamAlphaAPI.ui.setBlockFocusAndSelection();
                 }
             }
         }
