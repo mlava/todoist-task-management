@@ -2,31 +2,31 @@ const config = {
     tabTitle: "Todoist Task Management",
     settings: [
         {
-            id: "ttm-token",
+            id: "ttt-token",
             name: "Todoist API Token",
             description: "Your API token from https://todoist.com/app/settings/integrations",
             action: { type: "input", placeholder: "Add Todoist API token here" },
         },
         {
-            id: "ttm-import-header",
+            id: "ttt-import-header",
             name: "Roam Research Header",
             description: "Text Header for Roam Research on import",
             action: { type: "input", placeholder: "Imported Tasks" },
         },
         {
-            id: "ttm-overdue",
+            id: "ttt-overdue",
             name: "Include Overdue",
             description: "Include tasks that are overdue in Today's tasks",
             action: { type: "switch" },
         },
         {
-            id: "ttm-priority",
+            id: "ttt-priority",
             name: "Priority",
             description: "Import the item priority",
             action: { type: "switch" },
         },
         {
-            id: "ttm-description",
+            id: "ttt-description",
             name: "Description",
             description: "Import the item description",
             action: { type: "switch" },
@@ -90,20 +90,20 @@ export default {
         async function importTodoistTasks() {
             var TodoistHeader, key;
             breakme: {
-                if (!extensionAPI.settings.get("ttm-token")) {
+                if (!extensionAPI.settings.get("ttt-token")) {
                     key = "API";
                     sendConfigAlert(key);
                     break breakme;
                 } else {
-                    const myToken = extensionAPI.settings.get("ttm-token");
-                    if (!extensionAPI.settings.get("ttm-import-header")) {
+                    const myToken = extensionAPI.settings.get("ttt-token");
+                    if (!extensionAPI.settings.get("ttt-import-header")) {
                         TodoistHeader = "Imported tasks";
                     } else {
-                        TodoistHeader = extensionAPI.settings.get("ttm-import-header");
+                        TodoistHeader = extensionAPI.settings.get("ttt-import-header");
                     }
-                    const TodoistOverdue = extensionAPI.settings.get("ttm-overdue");
-                    const TodoistPriority = extensionAPI.settings.get("ttm-priority");
-                    const TodoistGetDescription = extensionAPI.settings.get("ttm-description");
+                    const TodoistOverdue = extensionAPI.settings.get("ttt-overdue");
+                    const TodoistPriority = extensionAPI.settings.get("ttt-priority");
+                    const TodoistGetDescription = extensionAPI.settings.get("ttt-description");
 
                     var projectIDText = "projectID: ";
                     var currentPageUID;
@@ -143,12 +143,12 @@ export default {
         async function createTodoistTask() {
             var key;
             breakme: {
-                if (!extensionAPI.settings.get("ttm-token")) {
+                if (!extensionAPI.settings.get("ttt-token")) {
                     key = "API";
                     sendConfigAlert(key);
                     break breakme;
                 } else {
-                    const myToken = extensionAPI.settings.get("ttm-token");
+                    const myToken = extensionAPI.settings.get("ttt-token");
 
                     // which page am I on?
                     var startBlock = await window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
@@ -223,20 +223,20 @@ export default {
         async function linkTodoistProject() {
             var TodoistHeader, key;
             breakme: {
-                if (!extensionAPI.settings.get("ttm-token")) {
+                if (!extensionAPI.settings.get("ttt-token")) {
                     key = "API";
                     sendConfigAlert(key);
                     break breakme;
                 } else {
-                    const myToken = extensionAPI.settings.get("ttm-token");
-                    if (!extensionAPI.settings.get("ttm-import-header")) {
+                    const myToken = extensionAPI.settings.get("ttt-token");
+                    if (!extensionAPI.settings.get("ttt-import-header")) {
                         TodoistHeader = "Imported tasks";
                     } else {
-                        TodoistHeader = extensionAPI.settings.get("ttm-import-header");
+                        TodoistHeader = extensionAPI.settings.get("ttt-import-header");
                     }
-                    const TodoistOverdue = extensionAPI.settings.get("ttm-overdue");
-                    const TodoistPriority = extensionAPI.settings.get("ttm-priority");
-                    const TodoistGetDescription = extensionAPI.settings.get("ttm-description");
+                    const TodoistOverdue = extensionAPI.settings.get("ttt-overdue");
+                    const TodoistPriority = extensionAPI.settings.get("ttt-priority");
+                    const TodoistGetDescription = extensionAPI.settings.get("ttt-description");
 
                     const clipText = await navigator.clipboard.readText();
                     const regex = /^\d{10}$/;
@@ -496,7 +496,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
 
 async function closeTask(taskIDClose, { extensionAPI }, mutationText, blockUID) {
     console.info("Closing task in Todoist")
-    const myToken = extensionAPI.settings.get("ttm-token");
+    const myToken = extensionAPI.settings.get("ttt-token");
     var myHeaders = new Headers();
     var bearer = 'Bearer ' + myToken;
     myHeaders.append("Authorization", bearer);
