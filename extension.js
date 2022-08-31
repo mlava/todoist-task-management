@@ -59,10 +59,12 @@ export default {
             initiateObserver();
         };
         window.addEventListener('hashchange', hashChange);
+        //console.info("TM hash changed");
         initiateObserver();
 
         keyEventHandler=function(e){
             if (e.key.toLowerCase() === 'i' && e.shiftKey && e.altKey) {
+                //console.info("TM kb shortcut");
                 importTodoistTasks();
             }
         }
@@ -76,9 +78,14 @@ export default {
                 for (const mutation of mutationsList) {
                     const regex = /#ttm(\d{10})/;
                     if (regex.test(mutation.addedNodes[0]?.textContent) == true && mutation.addedNodes[0]?.childNodes[0]?.children[0]?.control.checked == true) {
-                        var taskIDClose = mutation.addedNodes[0].children[2].innerText.split("ttm");
-                        var rrUID = mutation.addedNodes[0].lastElementChild.innerText.split("ttm");
-                        closeTask(taskIDClose[1], { extensionAPI }, mutation.addedNodes[0].childNodes[1].nodeValue, rrUID[1]);
+                        console.info("TM matching task in observer");
+                        var taskData = mutation.addedNodes[0].textContent.split("#ttm");
+                        console.info(taskData);
+                        var taskString = taskData[0].trim();
+                        var taskIDClose = taskData[1].trim();
+                        var rrUID = taskData[2].trim();
+                        console.info(taskIDClose, rrUID);
+                        closeTask(taskIDClose, { extensionAPI }, taskString, rrUID);
                     }
                 }
             };
@@ -206,7 +213,7 @@ export default {
 
                     newTaskString += "{{[[TODO]]}} ";
                     newTaskString += "" + task.content + "";
-                    newTaskString += " [Link](" + task.url + ")";
+                    //newTaskString += " [Link](" + task.url + ")";
                     newTaskString += " #ttm" + task.id + " ";
                     newTaskString += " #ttm" + startBlock + " ";
                     await window.roamAlphaAPI.updateBlock({
@@ -416,7 +423,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
                         itemString += " #Priority-" + priority + "";
                     }
                     const uid = window.roamAlphaAPI.util.generateUID();
-                    itemString += " [Link](" + task.url + ")";
+                    //itemString += " [Link](" + task.url + ")";
                     itemString += " #ttm" + task.id + " ";
                     itemString += " #ttm" + uid + " ";
 
@@ -507,8 +514,9 @@ async function closeTask(taskIDClose, { extensionAPI }, mutationText, blockUID) 
         redirect: 'follow'
     };
     var url = "https://api.todoist.com/rest/v1/tasks/" + taskIDClose + "/close";
-
+    console.info(url, requestOptions);
     const response = await fetch(url, requestOptions);
+    console.info(response);
     if (!response.ok) {
         alert("Failed to complete task in Todoist");
     } else {
