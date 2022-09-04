@@ -2,10 +2,11 @@ This extension allows you to manage your Todoist tasks from within your Roam Res
 
 This early version allows:
 
-1. import tasks by automatically sensing the date of a DNP and only bringing relevant tasks, using the Command Palette command 'Import tasks from Todoist'.
-2. create tasks within Roam Research and push them to Todoist using a Command Palette command 'Create task in Todoist'
-3. complete tasks in Roam by checking the TODO checkbox, and automatically complete the same task in Todoist
-4. link a RR project page to a project in Todoist and import, create and complete tasks for that project within Roam. Use the Command Palette command 'Link to Todoist project via clipboard'
+1. import tasks by automatically sensing the date of a DNP and only bringing relevant tasks, using the Command Palette command 'Import tasks from Todoist'. 
+2. you can also import using the SmartBlock command <%IMPORTTODOIST%>. Or create a button to trigger the SmartBlock and have this in your daily template.
+3. create tasks within Roam Research and push them to Todoist using a Command Palette command 'Create task in Todoist'
+4. complete tasks in Roam by checking the TODO checkbox, and automatically complete the same task in Todoist
+5. link a RR project page to a project in Todoist and import, create and complete tasks for that project within Roam. Use the Command Palette command 'Link to Todoist project via clipboard'
 
 This video shows most of this in action:
 
