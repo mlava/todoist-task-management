@@ -148,12 +148,10 @@ export default {
             const config = { attributes: false, childList: true, subtree: true };
             const callback = function (mutationsList, observer) {
                 for (const mutation of mutationsList) {
-                    const regex = /#ttm(\d{10})/;
-                    if (regex.test(mutation.addedNodes[0]?.textContent) == true && mutation.addedNodes[0]?.childNodes[0]?.children[0]?.control.checked == true) {
-                        //console.info("TM matching task in observer", mutation.addedNodes[0].parentElement.id);
-                        var taskData = mutation.addedNodes[0].textContent.split("#ttm");
-                        var taskString = taskData[0].trim();
-                        var taskIDClose = taskData[1].trim();
+                    if (mutation.addedNodes[0]?.childNodes[0]?.children[0]?.control.checked == true && mutation.addedNodes[0].innerHTML.includes("Task?id=") && !mutation.addedNodes[0].innerText.includes(TodoistHeader)) {
+                        var taskString = mutation.addedNodes[0].innerText.slice(0,mutation.addedNodes[0].innerText.length-5);
+                        var taskData = mutation.addedNodes[0].innerHTML.split("Task?id=");
+                        var taskIDClose = taskData[1].slice(0,10);
                         var blockID = mutation.addedNodes[0].parentElement.id.split("-");
                         var rrUID = blockID[blockID.length - 1];
                         closeTask(taskIDClose, { extensionAPI }, taskString, rrUID);
@@ -285,9 +283,7 @@ export default {
 
                     newTaskString += "{{[[TODO]]}} ";
                     newTaskString += "" + task.content + "";
-                    //newTaskString += " [Link](" + task.url + ")";
-                    newTaskString += " #ttm" + task.id + " ";
-                    newTaskString += " #ttm" + startBlock + " ";
+                    newTaskString += " [Link](" + task.url + ")";
                     await window.roamAlphaAPI.updateBlock({
                         block: {
                             uid: startBlock,
@@ -481,8 +477,8 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
                         itemString += " #Priority-" + priority + "";
                     }
                     const uid = window.roamAlphaAPI.util.generateUID();
-                    //itemString += " [Link](" + task.url + ")";
-                    itemString += " #ttm" + task.id + "";
+                    itemString += " [Link](" + task.url + ")";
+                    //itemString += " #ttm" + task.id + "";
                     //itemString += " #ttm" + uid + " ";
 
                     var thisExtras = [];
@@ -547,7 +543,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     }
 }
 
-async function closeTask(taskIDClose, { extensionAPI }, mutationText, blockUID) {
+async function closeTask(taskIDClose, { extensionAPI }, taskString, blockUID) {
     console.info("Closing task in Todoist")
     const myToken = extensionAPI.settings.get("ttt-token");
     var myHeaders = new Headers();
@@ -564,7 +560,7 @@ async function closeTask(taskIDClose, { extensionAPI }, mutationText, blockUID) 
     if (!response.ok) {
         alert("Failed to complete task in Todoist");
     } else {
-        var completedTaskString = "{{[[DONE]]}} ~~" + mutationText + "~~";
+        var completedTaskString = "{{[[DONE]]}} ~~" + taskString + "~~";
         await window.roamAlphaAPI.updateBlock(
             { block: { uid: blockUID, string: completedTaskString.toString(), open: false } });
         console.log("Task Completed in Todoist");
