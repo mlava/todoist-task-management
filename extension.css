@@ -1,3 +1,7 @@
 #todoist-prompt-root .bp3-dialog {
     width: fit-content !important;
 }
+
+.bp3-datepicker .DayPicker-Day.DayPicker-Day--isToday .bp3-datepicker-day-wrapper {
+    background-color: rgba(16,22,26,0.05) !important;
+}
