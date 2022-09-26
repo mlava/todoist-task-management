@@ -378,7 +378,8 @@ export default {
                     if (!startBlock) {
                         var uri = window.location.href;
                         const regex = /^https:\/\/roamresearch.com\/#\/(app|offline)\/\w+$/; //today's DNP
-                        if (regex.test(uri)) { // this is Daily Notes for today
+                        let logPage = document.getElementById("rm-log-container");
+                        if (logPage) {
                             var today = new Date();
                             var dd = String(today.getDate()).padStart(2, '0');
                             var mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -386,6 +387,14 @@ export default {
                             startBlock = mm + '-' + dd + '-' + yyyy;
                             DNP = true;
                         }
+                        if (regex.test(uri)) { // this is Daily Notes for today
+                            var today = new Date();
+                            var dd = String(today.getDate()).padStart(2, '0');
+                            var mm = String(today.getMonth() + 1).padStart(2, '0');
+                            var yyyy = today.getFullYear();
+                            startBlock = mm + '-' + dd + '-' + yyyy;
+                            DNP = true;
+                        } 
                     }
                     let q = `[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${startBlock}"]  ]`;
                     var info = await window.roamAlphaAPI.q(q);
