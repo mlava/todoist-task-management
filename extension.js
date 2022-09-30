@@ -2,7 +2,7 @@ let hashChange = undefined;
 let keyEventHandler = undefined;
 let observer = undefined;
 let parentUid = undefined;
-var TodoistHeader, key, TodoistOverdue, TodoistPriority, TodoistGetDescription, TodoistGetComments, TodoistGetSubtasks;
+var TodoistHeader, key, TodoistOverdue, TodoistAccount, TodoistPriority, TodoistGetDescription, TodoistGetComments, TodoistGetSubtasks;
 var buttonTrigger;
 
 // copied and adapted from https://github.com/dvargas92495/roamjs-components/blob/main/src/writes/createBlock.ts
@@ -112,6 +112,12 @@ const config = {
             action: { type: "input", placeholder: "Imported Tasks" },
         },
         {
+            id: "ttt-account",
+            name: "Account type",
+            description: "Account type - turn on if Todoist Premium",
+            action: { type: "switch" },
+        },
+        {
             id: "ttt-overdue",
             name: "Include Overdue",
             description: "Include tasks that are overdue in Today's tasks",
@@ -214,12 +220,6 @@ export default {
             callback: () => moveTask(),
         });
 
-        /*
-        hashChange = async (e) => {
-            //initiateObserver();
-        };
-        window.addEventListener('hashchange', hashChange);
-        */
         initiateObserver();
 
         keyEventHandler = function (e) {
@@ -229,7 +229,7 @@ export default {
         }
         window.addEventListener('keydown', keyEventHandler, false);
 
-        function initiateObserver() {
+        async function initiateObserver() {
             const targetNode1 = document.getElementsByClassName("roam-main")[0];
             const targetNode2 = document.getElementById("right-sidebar");
             const config = { attributes: false, childList: true, subtree: true };
@@ -237,12 +237,27 @@ export default {
                 for (const mutation of mutationsList) {
                     if (mutation.addedNodes[0]?.childNodes[0]?.childNodes[0]?.control?.checked == true) {
                         if (mutation.addedNodes[0]?.innerHTML?.includes("https://todoist.com/showTask?id=")) {
+                            observer.disconnect();
                             var taskString = mutation.addedNodes[0]?.innerText?.slice(0, mutation.addedNodes[0]?.innerText?.length - 4);
+                            var taskUrl = mutation.addedNodes[0]?.innerHTML.split("href=\"");
+                            var taskUrl2 = taskUrl[1].split("\"");
+                            taskUrl = taskUrl2[0];
                             var taskData = mutation.addedNodes[0]?.innerHTML?.split("Task?id=");
                             var taskIDClose = taskData[1].slice(0, 10);
-                            var blockID = mutation.target?.id?.split("-");
-                            var rrUID = blockID[blockID.length - 1];
-                            closeTask(taskIDClose, { extensionAPI }, taskString, rrUID);
+                            var rrUID = mutation.target?.id?.slice(-9);
+                            closeTask(taskIDClose, taskString, rrUID, taskUrl);
+                        }
+                    } else if (mutation.addedNodes[0]?.childNodes[0]?.childNodes[0]?.control?.checked == false) {
+                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://todoist.com/showTask?id=")) {
+                            observer.disconnect();
+                            var taskString = mutation.addedNodes[0]?.innerText?.slice(0, mutation.addedNodes[0]?.innerText?.length - 4);
+                            var taskUrl = mutation.addedNodes[0]?.innerHTML.split("href=\"");
+                            var taskUrl2 = taskUrl[1].split("\"");
+                            taskUrl = taskUrl2[0];
+                            var taskData = mutation.addedNodes[0]?.innerHTML?.split("Task?id=");
+                            var taskIDReopen = taskData[1].slice(0, 10);
+                            var rrUID = mutation.target?.id.slice(-9);
+                            reopenTask(taskIDReopen, taskString, rrUID, taskUrl);
                         }
                     }
                 }
@@ -275,7 +290,7 @@ export default {
 
             var selectedDate = await prompt({
                 title: "To which date?",
-            })
+            });
             if (selectedDate.length < 1) {
                 return;
             }
@@ -296,7 +311,7 @@ export default {
                 headers: myHeaders,
                 body: taskcontent
             };
-            var url = "https://api.todoist.com/rest/v1/tasks/" + taskID + "";
+            var url = "https://api.todoist.com/rest/v2/tasks/" + taskID + "";
 
             const response = await fetch(url, requestOptions);
             if (!response.ok) {
@@ -349,7 +364,7 @@ export default {
         };
 
         async function refreshTodoistTasks(buttonTrigger) { // TODO
-            console.info(buttonTrigger); 
+            console.info(buttonTrigger);
         }
 
         async function importTodoistTasks() {
@@ -370,6 +385,11 @@ export default {
                     TodoistGetDescription = extensionAPI.settings.get("ttt-description");
                     TodoistGetComments = extensionAPI.settings.get("ttt-comments");
                     TodoistGetSubtasks = extensionAPI.settings.get("ttt-subtasks");
+                    if (extensionAPI.settings.get("ttt-account")) {
+                        TodoistAccount = "Premium";
+                    } else {
+                        TodoistAccount = "Free";
+                    }
 
                     var projectIDText = "projectID: ";
                     var currentPageUID;
@@ -394,7 +414,7 @@ export default {
                             var yyyy = today.getFullYear();
                             startBlock = mm + '-' + dd + '-' + yyyy;
                             DNP = true;
-                        } 
+                        }
                     }
                     let q = `[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${startBlock}"]  ]`;
                     var info = await window.roamAlphaAPI.q(q);
@@ -452,7 +472,7 @@ export default {
                     } else {
                         var taskString = '{"content": "' + block[0][0].string + '"';
                     }
-                    var url = "https://api.todoist.com/rest/v1/tasks";
+                    var url = "https://api.todoist.com/rest/v2/tasks";
 
                     const regex = /^\d{2}-\d{2}-\d{4}$/;
                     if (regex.test(block[0][0].parents[0].uid)) { // this is a DNP, set a due date
@@ -566,6 +586,56 @@ export default {
                 }
             }
         }
+
+        async function closeTask(taskIDClose, taskString, blockUID, taskUrl) {
+            const myToken = extensionAPI.settings.get("ttt-token");
+            var myHeaders = new Headers();
+            var bearer = 'Bearer ' + myToken;
+            myHeaders.append("Authorization", bearer);
+
+            var requestOptions = {
+                method: 'POST',
+                headers: myHeaders,
+                redirect: 'follow'
+            };
+            var url = "https://api.todoist.com/rest/v2/tasks/" + taskIDClose + "/close";
+            const response = await fetch(url, requestOptions);
+            if (!response.ok) {
+                alert("Failed to complete task in Todoist");
+            } else {
+                var completedTaskString = "{{[[DONE]]}} ~~" + taskString.trim() + " [Link](" + taskUrl + ")~~";
+                await window.roamAlphaAPI.updateBlock(
+                    { block: { uid: blockUID, string: completedTaskString.toString(), open: false } });
+                console.log("Task Completed in Todoist");
+            }
+            await sleep(50);
+            initiateObserver();
+        }
+
+        async function reopenTask(taskIDReopen, taskString, blockUID, taskUrl) {
+            const myToken = extensionAPI.settings.get("ttt-token");
+            var myHeaders = new Headers();
+            var bearer = 'Bearer ' + myToken;
+            myHeaders.append("Authorization", bearer);
+
+            var requestOptions = {
+                method: 'POST',
+                headers: myHeaders,
+                redirect: 'follow'
+            };
+            var url = "https://api.todoist.com/rest/v2/tasks/" + taskIDReopen + "/reopen";
+            const response = await fetch(url, requestOptions);
+            if (!response.ok) {
+                alert("Failed to reopen task in Todoist");
+            } else {
+                var reopenedTaskString = "{{[[TODO]]}} " + taskString.trim() + " [Link](" + taskUrl + ")";
+                await window.roamAlphaAPI.updateBlock(
+                    { block: { uid: blockUID, string: reopenedTaskString.toString(), open: true } });
+                console.log("Task reopened in Todoist");
+            }
+            await sleep(50);
+            initiateObserver();
+        }
     },
     onunload: () => {
         window.roamAlphaAPI.ui.commandPalette.removeCommand({
@@ -606,15 +676,15 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     }
     if (DNP) {
         if (TodoistOverdue == true) {
-            var url = "https://api.todoist.com/rest/v1/tasks?filter=Today|Overdue";
+            var url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
         } else {
-            var url = "https://api.todoist.com/rest/v1/tasks?filter=Today";
+            var url = "https://api.todoist.com/rest/v2/tasks?filter=Today";
         }
     } else if (projectID) { // a project page
         if (Array.isArray(projectID)) {
-            var url = "https://api.todoist.com/rest/v1/tasks?project_id=" + projectID[1];
+            var url = "https://api.todoist.com/rest/v2/tasks?project_id=" + projectID[1];
         } else {
-            var url = "https://api.todoist.com/rest/v1/tasks?project_id=" + projectID;
+            var url = "https://api.todoist.com/rest/v2/tasks?project_id=" + projectID;
         }
     } else if (datedDNP) { // dated DNP
         var today = new Date();
@@ -623,12 +693,12 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
         var yyyy = today.getFullYear();
         today = mm + '-' + dd + '-' + yyyy;
         if (currentPageUID != today) {
-            var url = "https://api.todoist.com/rest/v1/tasks?filter=" + todoistDate;
+            var url = "https://api.todoist.com/rest/v2/tasks?filter=" + todoistDate;
         } else {
             if (TodoistOverdue == true) {
-                var url = "https://api.todoist.com/rest/v1/tasks?filter=Today|Overdue";
+                var url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
             } else {
-                var url = "https://api.todoist.com/rest/v1/tasks?filter=Today";
+                var url = "https://api.todoist.com/rest/v2/tasks?filter=Today";
             }
         }
     }
@@ -636,12 +706,13 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     var myHeaders = new Headers();
     var bearer = 'Bearer ' + myToken;
     myHeaders.append("Authorization", bearer);
+    myHeaders.append("Content-Type", "application/json");
     var requestOptions = {
         method: 'GET',
         headers: myHeaders,
         redirect: 'follow'
     };
-    
+
     const response = await fetch(url, requestOptions);
     const myTasks = await response.text();
     var task;
@@ -651,8 +722,8 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     let output = [];
     let finalOutput = [];
     for await (task of JSON.parse(myTasks)) {
-        if (task.hasOwnProperty('parent_id')) {
-            subTaskList.push({ id: task.id, parent_id: task.parent_id, order: task.order, content: task.content });
+        if (task.hasOwnProperty("parent_id") && task.parent_id != null) {
+            subTaskList.push({ id: task.id, parent_id: task.parent_id, order: task.order, content: task.content, url: task.url, priority: task.priority });
         } else {
             taskList.push({ id: task.id, uid: "temp" });
         }
@@ -679,9 +750,6 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
                         itemString += " #Priority-" + priority + "";
                     }
                     itemString += " [Link](" + task.url + ")";
-                    //itemString += " #ttm" + task.id + "";
-                    //const uid = window.roamAlphaAPI.util.generateUID();
-                    //itemString += " #ttm" + uid + " ";
 
                     var thisExtras = [];
                     // print description
@@ -691,15 +759,14 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
 
                     // print comments
                     if (TodoistGetComments == true && task.comment_count > 0) {
-                        var url = "https://api.todoist.com/rest/v1/comments?task_id=" + task.id + "";
+                        var url = "https://api.todoist.com/rest/v2/comments?task_id=" + task.id + "";
                         const response = await fetch(url, requestOptions);
                         const myComments = await response.text();
                         let commentsJSON = await JSON.parse(myComments);
-
                         var commentString = "";
                         for (var j = 0; j < commentsJSON.length; j++) {
                             commentString = "";
-                            if (commentsJSON[j].hasOwnProperty('attachment') && TodoistAccount == "Premium") {
+                            if (commentsJSON[j].attachment != null && TodoistAccount == "Premium") {
                                 if (commentsJSON[j].attachment.file_type == "application/pdf") {
                                     commentString = "{{pdf: " + commentsJSON[j].attachment.file_url + "}}";
                                 } else if (commentsJSON[j].attachment.file_type == "image/jpeg" || commentsJSON[j].attachment.file_type == "image/png") {
@@ -707,7 +774,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
                                 } else {
                                     commentString = "" + commentsJSON[j].content + "";
                                 }
-                            } else if (commentsJSON[j].hasOwnProperty('attachment')) {
+                            } else if (commentsJSON[j].attachment != null) {
                                 if (commentsJSON[j].attachment.file_type == "text/html") {
                                     commentString = "" + commentsJSON[j].content + " [Email Body](" + commentsJSON[j].attachment.file_url + ")";
                                 }
@@ -725,7 +792,23 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
                     if (TodoistGetSubtasks == true && subTaskList.length > 0) {
                         for (var k = 0; k < subTaskList.length; k++) {
                             if (subTaskList[k].parent_id == task.id) {
-                                thisExtras.push({ "text": subTaskList[k].content.toString(), });
+                                var subitemString = "";
+                                subitemString += "{{[[TODO]]}} ";
+                                subitemString += "" + subTaskList[k].content + "";
+                                if (TodoistPriority == true) {
+                                    if (task.priority == "4") {
+                                        var priority = "1";
+                                    } else if (task.priority == "3") {
+                                        var priority = "2";
+                                    } else if (task.priority == "2") {
+                                        var priority = "3";
+                                    } else if (task.priority == "1") {
+                                        var priority = "4";
+                                    }
+                                    subitemString += " #Priority-" + subTaskList[k].priority + "";
+                                }
+                                subitemString += " [Link](" + subTaskList[k].url + ")";
+                                thisExtras.push({ "text": subitemString.toString(), });
                             }
                         }
                     }
@@ -745,29 +828,6 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     }
 }
 
-async function closeTask(taskIDClose, { extensionAPI }, taskString, blockUID) {
-    const myToken = extensionAPI.settings.get("ttt-token");
-    var myHeaders = new Headers();
-    var bearer = 'Bearer ' + myToken;
-    myHeaders.append("Authorization", bearer);
-
-    var requestOptions = {
-        method: 'POST',
-        headers: myHeaders,
-        redirect: 'follow'
-    };
-    var url = "https://api.todoist.com/rest/v1/tasks/" + taskIDClose + "/close";
-    const response = await fetch(url, requestOptions);
-    if (!response.ok) {
-        alert("Failed to complete task in Todoist");
-    } else {
-        var completedTaskString = "{{[[DONE]]}} ~~" + taskString + "~~";
-        await window.roamAlphaAPI.updateBlock(
-            { block: { uid: blockUID, string: completedTaskString.toString(), open: false } });
-        console.log("Task Completed in Todoist");
-    }
-}
-
 function convertToRoamDate(dateString) {
     var parsedDate = dateString.split('-');
     var year = parsedDate[2];
@@ -779,4 +839,8 @@ function convertToRoamDate(dateString) {
         ? "th"
         : ["st", "nd", "rd"][day % 10 - 1];
     return "" + monthName + " " + day + suffix + ", " + year + "";
+}
+
+async function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
