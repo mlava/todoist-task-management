@@ -676,7 +676,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     }
     if (DNP) {
         if (TodoistOverdue == true) {
-            var url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
+            var url = "https://api.todoist.com/rest/v1/tasks?filter=Today|Overdue";
         } else {
             var url = "https://api.todoist.com/rest/v2/tasks?filter=Today";
         }
@@ -696,7 +696,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
             var url = "https://api.todoist.com/rest/v2/tasks?filter=" + todoistDate;
         } else {
             if (TodoistOverdue == true) {
-                var url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
+                var url = "https://api.todoist.com/rest/v1/tasks?filter=Today|Overdue";
             } else {
                 var url = "https://api.todoist.com/rest/v2/tasks?filter=Today";
             }
