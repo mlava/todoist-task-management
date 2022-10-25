@@ -1,5 +1,8 @@
 This extension allows you to manage your Todoist tasks from within your Roam Research graph.
 
+**NEW:**  BETA: Automatic sync of daily tasks in both directions!
+- Set a configurable interval and the extension will update tasks from Todoist automatically to your DNP. If you complete a task in Todoist it should update in your RR graph. You can still complete tasks in Roam Research and have that sync to Todoist, and uncomplete of tasks in RR will also update the task in Todoist. The only limitation is that you can't uncomplete a recurring task as the Todoist API won't allow for that.
+
 This version allows:
 
 1. import tasks by automatically sensing the date of a DNP and only bringing relevant tasks, using the Command Palette command 'Import tasks from Todoist'. 
