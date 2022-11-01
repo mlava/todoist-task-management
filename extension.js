@@ -195,26 +195,41 @@ export default {
             label: "Import tasks from Todoist",
             callback: () => {
                 const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                importTodoistTasks().then(async (blocks) => {
-                    parentUid = uid || await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
-                    if (parentUid == null) {
-                        var uri = window.location.href;
-                        const regex = /^https:\/\/roamresearch.com\/#\/(app|offline)\/\w+$/; //today's DNP
-                        if (regex.test(uri)) { // this is Daily Notes for today
-                            var today = new Date();
-                            var dd = String(today.getDate()).padStart(2, '0');
-                            var mm = String(today.getMonth() + 1).padStart(2, '0');
-                            var yyyy = today.getFullYear();
-                            parentUid = mm + '-' + dd + '-' + yyyy;
+                importTodoistTasks(false, false).then(async (blocks) => {
+                    if (uid == undefined) {
+                        parentUid = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
+                        if (parentUid == null) { // check for log page
+                            var uri = window.location.href;
+                            const regex = /^https:\/\/roamresearch.com\/.+\/(app|offline)\/\w+$/; // log page
+                            if (regex.test(uri)) { // definitely a log page, so get the corresponding page uid
+                                var today = new Date();
+                                var dd = String(today.getDate()).padStart(2, '0');
+                                var mm = String(today.getMonth() + 1).padStart(2, '0');
+                                var yyyy = today.getFullYear();
+                                parentUid = mm + '-' + dd + '-' + yyyy;
+                            }
                         }
+                        var thisBlock = window.roamAlphaAPI.util.generateUID();
+                        await window.roamAlphaAPI.createBlock({
+                            location: { "parent-uid": parentUid, order: 0 },
+                            block: { string: TodoistHeader.toString(), uid: thisBlock }
+                        });
+                        parentUid = thisBlock;
+                        blocks.forEach((node, order) => createBlock({
+                            parentUid,
+                            order,
+                            node
+                        }));
+                    } else {
+                        parentUid = uid;
+                        await window.roamAlphaAPI.updateBlock(
+                            { block: { uid: parentUid, string: TodoistHeader.toString(), open: true } });
+                        blocks.forEach((node, order) => createBlock({
+                            parentUid,
+                            order,
+                            node
+                        }));
                     }
-                    await window.roamAlphaAPI.updateBlock(
-                        { block: { uid: parentUid, string: TodoistHeader.toString(), open: true } });
-                    blocks.forEach((node, order) => createBlock({
-                        parentUid,
-                        order,
-                        node
-                    }))
                 });
             },
         });
@@ -222,27 +237,17 @@ export default {
         const args = {
             text: "IMPORTTODOIST",
             help: "Import tasks from Todoist",
-            handler: (context) => importTodoistTasks(auto),
-        };
-        const args1 = {
-            text: "REFRESHTODOIST",
-            help: "Refresh tasks from Todoist",
-            handler: (context) => () => {
-                let buttonTrigger = context.variables.buttonTrigger;
-                refreshTodoistTasks(buttonTrigger);
-            },
+            handler: (context) => importTodoistTasksSB,
         };
 
         if (window.roamjs?.extension?.smartblocks) {
             window.roamjs.extension.smartblocks.registerCommand(args);
-            window.roamjs.extension.smartblocks.registerCommand(args1);
         } else {
             document.body.addEventListener(
                 `roamjs:smartblocks:loaded`,
                 () =>
                     window.roamjs?.extension.smartblocks &&
-                    window.roamjs.extension.smartblocks.registerCommand(args) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args1)
+                    window.roamjs.extension.smartblocks.registerCommand(args)
             );
         }
 
@@ -402,11 +407,11 @@ export default {
             initiateObserver();
         };
 
-        async function refreshTodoistTasks(buttonTrigger) { // TODO
-            console.info(buttonTrigger);
+        function importTodoistTasksSB() {
+            return importTodoistTasks(false, true)
         }
 
-        async function importTodoistTasks(auto) {
+        async function importTodoistTasks(auto, SB) {
             breakme: {
                 if (!extensionAPI.settings.get("ttt-token")) {
                     key = "API";
@@ -450,7 +455,7 @@ export default {
                             });
                             autoBlockUid = uid;
                         }
-                        
+
                         existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${autoBlockUid}"] ]`);
                         if (existingItems != null && existingItems[0][0].hasOwnProperty("children")) {
                             for (var i = 0; i < existingItems[0][0].children.length; i++) {
@@ -495,7 +500,7 @@ export default {
                             currentPageUID = info[0][0].uid;
                         }
                     }
-                    return importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid);
+                    return importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid, SB);
                 }
             }
         }
@@ -789,7 +794,7 @@ export default {
     }
 }
 
-async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid) {
+async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid, SB) {
     const regex = /^\d{2}-\d{2}-\d{4}$/;
     var datedDNP = false;
     var url, urlC;
@@ -800,7 +805,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     }
     if (DNP || auto) {
         if (TodoistOverdue == true) {
-            url = "https://api.todoist.com/rest/v1/tasks?filter=Today|Overdue";
+            url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
         } else {
             url = "https://api.todoist.com/rest/v2/tasks?filter=Today";
         }
@@ -820,7 +825,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
             url = "https://api.todoist.com/rest/v2/tasks?filter=" + todoistDate;
         } else {
             if (TodoistOverdue == true) {
-                url = "https://api.todoist.com/rest/v1/tasks?filter=Today|Overdue";
+                url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
             } else {
                 url = "https://api.todoist.com/rest/v2/tasks?filter=Today";
             }
@@ -844,6 +849,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     let taskList = [];
     let subTaskList = [];
     let output = [];
+
     for await (task of JSON.parse(myTasks)) {
         if (task.hasOwnProperty("parent_id") && task.parent_id != null) {
             subTaskList.push({ id: task.id, parent_id: task.parent_id, order: task.order, content: task.content, url: task.url, priority: task.priority });
@@ -978,10 +984,13 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
             }
         }
 
-        if (!auto) {
+        if (SB) {
+            var header = [];        
+            header.push({ "text": TodoistHeader.toString(), "children": output });
+            return header;
+        } else if (!auto) {
             return output;
-        }
-        else {
+        } else {
             parentUid = autoBlockUid;
             output.forEach((node, order) => createBlock({
                 parentUid,
