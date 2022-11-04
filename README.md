@@ -2,6 +2,7 @@ This extension allows you to manage your Todoist tasks from within your Roam Res
 
 **NEW:**  BETA: Automatic sync of daily tasks in both directions!
 - Set a configurable interval and the extension will update tasks from Todoist automatically to your DNP. If you complete a task in Todoist it should update in your RR graph. You can still complete tasks in Roam Research and have that sync to Todoist, and uncomplete of tasks in RR will also update the task in Todoist. The only limitation is that you can't uncomplete a recurring task as the Todoist API won't allow for that.
+- Option to create a link back to the Roam Research block on creating a task in Todoist. Turned off by default. Creates a link to the RR block reference in the description field of the Todoist task.
 
 This version allows:
 
