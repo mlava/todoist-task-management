@@ -167,6 +167,12 @@ export default {
                     description: "Import item priority",
                     action: { type: "switch" },
                 },
+                {
+                    id: "ttt-createLink",
+                    name: "Link in Created Task",
+                    description: "Create a link to the Roam block in newly created Todoist tasks",
+                    action: { type: "switch" },
+                },
             ]
         };
         extensionAPI.settings.panel.create(config);
@@ -532,6 +538,7 @@ export default {
                     break breakme;
                 } else {
                     const myToken = extensionAPI.settings.get("ttt-token");
+                    const createLinkTodoist = extensionAPI.settings.get("ttt-createLink");
 
                     // which page am I on?
                     var startBlock = await window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
@@ -564,17 +571,31 @@ export default {
                     var url = "https://api.todoist.com/rest/v2/tasks";
 
                     const regex = /^\d{2}-\d{2}-\d{4}$/;
+                    const regex1 = /^https:\/\/roamresearch.com\/#\/(app|offline)\/\w+$/; //today's DNP
+                    var uri = window.location.href;
                     if (regex.test(block[0][0].parents[0].uid)) { // this is a DNP, set a due date
                         var dateString = block[0][0].parents[0].uid.split("-");
                         var todoistDate = dateString[2] + "-" + dateString[0] + "-" + dateString[1];
+                        if (createLinkTodoist) {
+                            let roamUrl = uri + "/page/" + startBlock;
+                            taskString += ', "description": "' + roamUrl + '"';
+                        }
                         taskString += ', "due_date": "' + todoistDate + '"}';
                     } else if (block[0][0].parents[0].hasOwnProperty('children')) {
+                        if (createLinkTodoist) {
+                            let roamUrl = window.location.href.slice(0, -9) + "" + startBlock;
+                            taskString += ', "description": "' + roamUrl + '"';
+                        }
                         for (var i = 0; i < block[0][0].parents[0]?.children.length; i++) {
                             if (block[0][0].parents[0].children[i].string.match(projectIDText)) { // This is a project page, set a project_id
                                 projectID = block[0][0].parents[0].children[i].string.split(projectIDText)[1];
                             }
                         }
-                        taskString += ', "project_id": "' + projectID + '"}';
+                        if (projectID != undefined) {
+                            taskString += ', "project_id": "' + projectID + '"}';
+                        } else {
+                            taskString += '}';
+                        }
                     }
 
                     var requestOptions = {
@@ -985,7 +1006,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
         }
 
         if (SB) {
-            var header = [];        
+            var header = [];
             header.push({ "text": TodoistHeader.toString(), "children": output });
             return header;
         } else if (!auto) {
