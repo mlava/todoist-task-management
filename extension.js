@@ -51,7 +51,7 @@ const FormDialog = ({
     )
     return window.React.createElement(
         window.Blueprint.Core.Dialog,
-        { isOpen: true, onClose: onCancel, title, },
+        { isOpen: true, enforceFocus: false, onClose: onCancel, title, },
         window.React.createElement(
             "div",
             { className: window.Blueprint.Core.Classes.DIALOG_BODY },
@@ -266,8 +266,12 @@ export default {
             callback: () => linkTodoistProject(),
         });
         window.roamAlphaAPI.ui.commandPalette.addCommand({
-            label: "Reschedule task in Todoist",
+            label: "Reschedule task(s) in Todoist",
             callback: () => moveTask(),
+        });
+        window.roamAlphaAPI.ui.blockContextMenu.addCommand({
+            label: "Reschedule task(s) in Todoist",
+            callback: (e) => moveTask(e),
         });
 
         initiateObserver();
@@ -317,7 +321,7 @@ export default {
             observer.observe(targetNode2, config);
         }
 
-        async function moveTask() {
+        async function moveTask(e) {
             observer.disconnect();
             var TodoistHeader;
             const myToken = extensionAPI.settings.get("ttt-token");
@@ -326,47 +330,48 @@ export default {
             } else {
                 TodoistHeader = extensionAPI.settings.get("ttt-import-header");
             }
-            const taskUid = await window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-            const pageUID = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
+            let uidArray = [];
+            const regex = /(\{\{\[\[TODO\]\]\}\})/;
+            let uids = await roamAlphaAPI.ui.individualMultiselect.getSelectedUids(); // get multi-selection uids
 
-            var taskString = await window.roamAlphaAPI.data.pull("[:block/string]", [":block/uid", taskUid]);
-            if (taskString[":block/string"].includes("Task?id=")) {
-                var taskData = taskString[":block/string"].split("Task?id=");
+            if (uids.length === 0) { // not a multi-select query
+                var uid, text;
+                if (e) { // bullet right-click
+                    uid = e["block-uid"].toString();
+                    text = e["block-string"].toString();
+                } else { // command palette
+                    uid = await window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                    text = await window.roamAlphaAPI.data.pull("[:block/string]", [":block/uid", startBlock]);
+                }
+                if (text.includes("Task?id=")) { // there's a Todoist task in this block, add uid and text to array
+                    uidArray.push({ uid, text })
+                } else {
+                    alert("You can't reschedule blocks without a Todoist task")
+                    return;
+                }
             } else {
-                alert("This block doesn't contain a Todoist task!");
-                return;
+                for (var i = 0; i < uids.length; i++) {
+                    var results = await window.roamAlphaAPI.data.pull("[:block/string]", [":block/uid", uids[i]]);
+                    var text = results[":block/string"];
+                    if (text.includes("Task?id=")) { // there's a Todoist task in this block
+                        let uid = uids[i].toString();
+                        uidArray.push({ uid, text })
+                    }
+                }
             }
-            var taskID = taskData[1].slice(0, 10);
 
-            var selectedDate = await prompt({
-                title: "To which date?",
-            });
-            if (selectedDate.length < 1) {
-                return;
-            }
-            let year = selectedDate.getFullYear();
-            var dd = String(selectedDate.getDate()).padStart(2, '0');
-            var mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
-            let newDate = mm + "-" + dd + "-" + year;
-            var todoistDate = year + "-" + mm + "-" + dd;
-            var taskcontent = '{"due_date": "' + todoistDate + '"}';
-
-            console.info("Rescheduling task in Todoist")
-            var myHeaders = new Headers();
-            var bearer = 'Bearer ' + myToken;
-            myHeaders.append("Authorization", bearer);
-            myHeaders.append("Content-Type", "application/json");
-            var requestOptions = {
-                method: 'POST',
-                headers: myHeaders,
-                body: taskcontent
-            };
-            var url = "https://api.todoist.com/rest/v2/tasks/" + taskID + "";
-
-            const response = await fetch(url, requestOptions);
-            if (!response.ok) {
-                alert("Failed to reschedule task in Todoist");
-            } else {
+            if (uidArray.length > 0) {
+                const pageUID = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
+                var selectedDate = await prompt({
+                    title: "To which date?",
+                });
+                if (selectedDate.length < 1) {
+                    return;
+                }
+                let year = selectedDate.getFullYear();
+                var dd = String(selectedDate.getDate()).padStart(2, '0');
+                var mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                let newDate = mm + "-" + dd + "-" + year;
                 var titleDate = convertToRoamDate(newDate);
                 var page = await window.roamAlphaAPI.q(`[:find (pull ?e [:node/title]) :where [?e :block/uid "${newDate}"]]`);
                 if (page.length > 0 && page[0][0] != null) {
@@ -375,42 +380,80 @@ export default {
                     await window.roamAlphaAPI.createPage({ page: { title: titleDate, uid: newDate } });
                 }
 
-                // find Todoist header
-                var results = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${newDate}"] ]`);
-                var headerBlockUid = undefined;
+                var todoistDate = year + "-" + mm + "-" + dd;
+                var taskcontent = '{"due_date": "' + todoistDate + '"}';
 
-                if (results[0][0].hasOwnProperty("children") && results[0][0].children.length > 0) {
-                    for (var i = 0; i < results[0][0].children.length; i++) {
-                        if (results[0][0].children[i].string == TodoistHeader) {
-                            headerBlockUid = results[0][0]?.children[i]?.uid;
+                console.info("Rescheduling task(s) in Todoist")
+                var myHeaders = new Headers();
+                var bearer = 'Bearer ' + myToken;
+                myHeaders.append("Authorization", bearer);
+                myHeaders.append("Content-Type", "application/json");
+                var requestOptions = {
+                    method: 'POST',
+                    headers: myHeaders,
+                    body: taskcontent
+                };
+                
+                for (var j = 0; j < uidArray.length; j++) {
+                    var taskID = uidArray[j].text.slice(-11);
+                    taskID = taskID.slice(0,10);
+                    var url = "https://api.todoist.com/rest/v2/tasks/" + taskID + "";
+
+                    const response = await fetch(url, requestOptions);
+                    if (!response.ok) {
+                        alert("Failed to reschedule task in Todoist");
+                    } else {
+                        // find Todoist header
+                        var headerBlockUid = await window.roamAlphaAPI.q(`[:find ?u :where [?b :block/page ?p] [?b :block/uid ?u] [?b :block/string "${TodoistHeader}"] [?p :block/uid "${newDate}"]]`)?.[0]?.[0];
+                        if (headerBlockUid == undefined) { // there isn't a Todoist header on this date yet, so create one
+                            const newHeaderUid = window.roamAlphaAPI.util.generateUID();
+                            await window.roamAlphaAPI.createBlock({
+                                location: { "parent-uid": newDate, order: 0 },
+                                block: { string: TodoistHeader.toString(), uid: newHeaderUid }
+                            });
+                            headerBlockUid = newHeaderUid;
                         }
-                    }
-                }
-                if (headerBlockUid == undefined) { // there isn't a Todoist header on this date yet, so create one
-                    const newHeaderUid = window.roamAlphaAPI.util.generateUID();
-                    await window.roamAlphaAPI.createBlock({
-                        location: { "parent-uid": newDate, order: 0 },
-                        block: { string: TodoistHeader.toString(), uid: newHeaderUid }
-                    });
-                    headerBlockUid = newHeaderUid;
-                }
-                let newBlockUid = roamAlphaAPI.util.generateUID();
-                await window.roamAlphaAPI.createBlock({ location: { "parent-uid": headerBlockUid.toString(), order: 1 }, block: { string: taskString[":block/string"].toString(), uid: newBlockUid } });
-                await window.roamAlphaAPI.deleteBlock({ block: { uid: taskUid } });
 
-                var results = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${pageUID}"] ]`);
-                if (results[0][0].hasOwnProperty("children") && results[0][0].children.length > 0) {
-                    for (var i = 0; i < results[0][0].children.length; i++) {
-                        if (results[0][0].children[i].string == TodoistHeader) {
-                            var headerUid = results[0][0]?.children[i]?.uid;
-                            if (!results[0][0]?.children[i].hasOwnProperty("children")) { // no other tasks under header
-                                await window.roamAlphaAPI.deleteBlock({ block: { uid: headerUid } });
+                        await window.roamAlphaAPI.moveBlock( // move to the new date
+                            {location: { "parent-uid": headerBlockUid, order: j }, block: { uid: uidArray[j].uid.toString() } });
+
+                        // check if header on source page has any tasks left beneath it, remove header if none remain
+                        var results = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${pageUID}"] ]`);
+                        if (results[0][0].hasOwnProperty("children") && results[0][0].children.length > 0) {
+                            for (var i = 0; i < results[0][0].children.length; i++) {
+                                if (results[0][0].children[i].string == TodoistHeader) {
+                                    var headerUid = results[0][0]?.children[i]?.uid;
+                                    if (!results[0][0]?.children[i].hasOwnProperty("children")) { // no other tasks under header
+                                        await window.roamAlphaAPI.deleteBlock({ block: { uid: headerUid } });
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                if (uids.length !== 0) { // turn off block multi-select
+                    window.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: "m",
+                        keyCode: 77,
+                        code: "KeyM",
+                        which: 77,
+                        shiftKey: false,
+                        ctrlKey: true,
+                        metaKey: false
+                    }));
+                    window.dispatchEvent(new KeyboardEvent('keyup', {
+                        key: "m",
+                        keyCode: 77,
+                        code: "KeyM",
+                        which: 77,
+                        shiftKey: false,
+                        ctrlKey: true,
+                        metaKey: false
+                    }));
+                }
             }
-            initiateObserver();
+
+            initiateObserver(); // restart monitoring for task completions
         };
 
         function importTodoistTasksSB() {
@@ -803,7 +846,10 @@ export default {
             label: 'Link to Todoist project via clipboard'
         });
         window.roamAlphaAPI.ui.commandPalette.removeCommand({
-            label: 'Reschedule task in Todoist'
+            label: 'Reschedule task(s) in Todoist'
+        });
+        window.roamAlphaAPI.ui.blockContextMenu.removeCommand({
+            label: "Reschedule task(s) in Todoist"
         });
         if (window.roamjs?.extension?.smartblocks) {
             window.roamjs.extension.smartblocks.unregisterCommand("IMPORTTODOIST");
