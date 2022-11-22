@@ -927,7 +927,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
 
     const date = new Date();
     date.setHours(0, 0, 0, 0);
-    const sinceDate = new Date(date.setMinutes(date.getMinutes() - date.getTimezoneOffset()));
+    let sinceDate = new Date(date.setMinutes(date.getMinutes() + date.getTimezoneOffset()));
     let year = sinceDate.getFullYear();
     var dd = String(sinceDate.getDate()).padStart(2, '0');
     var mm = String(sinceDate.getMonth() + 1).padStart(2, '0');
