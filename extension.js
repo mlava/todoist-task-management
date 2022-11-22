@@ -2,7 +2,7 @@ let hashChange = undefined;
 let keyEventHandler = undefined;
 let observer = undefined;
 let parentUid = undefined;
-var TodoistHeader, key, TodoistOverdue, autoParentUid, autoBlockUid, existingItems, TodoistAccount, TodoistPriority, TodoistGetDescription, TodoistGetComments, TodoistGetSubtasks;
+var TodoistHeader, key, TodoistOverdue, TodoistCompleted, autoParentUid, autoBlockUid, existingItems, TodoistAccount, TodoistPriority, TodoistGetDescription, TodoistGetComments, TodoistGetSubtasks;
 var buttonTrigger;
 var checkTDInterval = 0;
 var auto = false;
@@ -141,6 +141,12 @@ export default {
                     id: "ttt-overdue",
                     name: "Include Overdue",
                     description: "Include tasks that are overdue in Today's tasks",
+                    action: { type: "switch" },
+                },
+                {
+                    id: "ttt-completed",
+                    name: "Include Completed",
+                    description: "Include completed tasks in Today's tasks",
                     action: { type: "switch" },
                 },
                 {
@@ -393,10 +399,10 @@ export default {
                     headers: myHeaders,
                     body: taskcontent
                 };
-                
+
                 for (var j = 0; j < uidArray.length; j++) {
                     var taskID = uidArray[j].text.slice(-11);
-                    taskID = taskID.slice(0,10);
+                    taskID = taskID.slice(0, 10);
                     var url = "https://api.todoist.com/rest/v2/tasks/" + taskID + "";
 
                     const response = await fetch(url, requestOptions);
@@ -415,7 +421,7 @@ export default {
                         }
 
                         await window.roamAlphaAPI.moveBlock( // move to the new date
-                            {location: { "parent-uid": headerBlockUid, order: j }, block: { uid: uidArray[j].uid.toString() } });
+                            { location: { "parent-uid": headerBlockUid, order: j }, block: { uid: uidArray[j].uid.toString() } });
 
                         // check if header on source page has any tasks left beneath it, remove header if none remain
                         var results = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${pageUID}"] ]`);
@@ -474,6 +480,7 @@ export default {
                         TodoistHeader = extensionAPI.settings.get("ttt-import-header");
                     }
                     TodoistOverdue = extensionAPI.settings.get("ttt-overdue");
+                    TodoistCompleted = extensionAPI.settings.get("ttt-completed");
                     TodoistPriority = extensionAPI.settings.get("ttt-priority");
                     TodoistGetDescription = extensionAPI.settings.get("ttt-description");
                     TodoistGetComments = extensionAPI.settings.get("ttt-comments");
@@ -549,7 +556,7 @@ export default {
                             currentPageUID = info[0][0].uid;
                         }
                     }
-                    return importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid, SB);
+                    return importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid, SB, TodoistCompleted);
                 }
             }
         }
@@ -861,7 +868,7 @@ export default {
     }
 }
 
-async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid, SB) {
+async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid, SB, TodoistCompleted) {
     const regex = /^\d{2}-\d{2}-\d{4}$/;
     var datedDNP = false;
     var url, urlC;
@@ -916,6 +923,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     let taskList = [];
     let subTaskList = [];
     let output = [];
+    let cTasks = [];
 
     for await (task of JSON.parse(myTasks)) {
         if (task.hasOwnProperty("parent_id") && task.parent_id != null) {
@@ -925,23 +933,25 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
         }
     }
 
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    let sinceDate = new Date(date.setMinutes(date.getMinutes() + date.getTimezoneOffset()));
-    let year = sinceDate.getFullYear();
-    var dd = String(sinceDate.getDate()).padStart(2, '0');
-    var mm = String(sinceDate.getMonth() + 1).padStart(2, '0');
-    var hr = String(sinceDate.getHours()).padStart(2, '0');
-    var min = String(sinceDate.getMinutes()).padStart(2, '0');
-    const sinceString = "" + year + "-" + mm + "-" + dd + "T" + hr + ":" + min + ":00";
-    urlC = "https://api.todoist.com/sync/v9/completed/get_all?since=" + sinceString + "";
+    if (TodoistCompleted) {
+        const date = new Date();
+        date.setHours(0, 0, 0, 0);
+        let sinceDate = new Date(date.setMinutes(date.getMinutes() + date.getTimezoneOffset()));
+        let year = sinceDate.getFullYear();
+        var dd = String(sinceDate.getDate()).padStart(2, '0');
+        var mm = String(sinceDate.getMonth() + 1).padStart(2, '0');
+        var hr = String(sinceDate.getHours()).padStart(2, '0');
+        var min = String(sinceDate.getMinutes()).padStart(2, '0');
+        const sinceString = "" + year + "-" + mm + "-" + dd + "T" + hr + ":" + min + ":00";
+        urlC = "https://api.todoist.com/sync/v9/completed/get_all?since=" + sinceString + "";
 
-    const responseC = await fetch(urlC, requestOptions);
-    const myTasksC = await responseC.text();
-    let cTasks = JSON.parse(myTasksC);
-    if (cTasks.items.length > 0) {
-        for (var i = 0; i < cTasks.items.length; i++) {
-            taskList.push({ id: cTasks.items[i].id, uid: "temp" });
+        const responseC = await fetch(urlC, requestOptions);
+        const myTasksC = await responseC.text();
+        cTasks = JSON.parse(myTasksC);
+        if (cTasks.items.length > 0) {
+            for (var i = 0; i < cTasks.items.length; i++) {
+                taskList.push({ id: cTasks.items[i].id, uid: "temp" });
+            }
         }
     }
 
@@ -1036,7 +1046,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
                     }
                 }
             }
-            if (cTasks.items.length > 0) {
+            if (TodoistCompleted && cTasks.items.length > 0) {
                 for (var j = 0; j < cTasks.items.length; j++) {
                     if (taskList[i].id == cTasks.items[j].id) {
                         // print task
