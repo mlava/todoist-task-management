@@ -1,12 +1,9 @@
-let hashChange = undefined;
 let keyEventHandler = undefined;
 let observer = undefined;
 let parentUid = undefined;
 var TodoistHeader, key, TodoistOverdue, TodoistCompleted, autoParentUid, autoBlockUid, existingItems, TodoistAccount, TodoistPriority, TodoistGetDescription, TodoistGetComments, TodoistGetSubtasks;
-var buttonTrigger;
 var checkTDInterval = 0;
 var auto = false;
-var autoBlockUidLength = 0;
 
 // copied and adapted from https://github.com/dvargas92495/roamjs-components/blob/main/src/writes/createBlock.ts
 const createBlock = (params) => {
@@ -147,6 +144,12 @@ export default {
                     id: "ttt-completed",
                     name: "Include Completed",
                     description: "Include completed tasks in Today's tasks",
+                    action: { type: "switch" },
+                },
+                {
+                    id: "ttt-completedStrikethrough",
+                    name: "Strikethrough Completed Tasks",
+                    description: "Strikethrough task content upon completion",
                     action: { type: "switch" },
                 },
                 {
@@ -749,6 +752,7 @@ export default {
 
         async function closeTask(taskIDClose, taskString, blockUID, taskUrl) {
             const myToken = extensionAPI.settings.get("ttt-token");
+            const completedStrikethrough = extensionAPI.settings.get("ttt-completedStrikethrough");
             var myHeaders = new Headers();
             var bearer = 'Bearer ' + myToken;
             myHeaders.append("Authorization", bearer);
@@ -763,7 +767,15 @@ export default {
             if (!response.ok) {
                 alert("Failed to complete task in Todoist");
             } else {
-                var completedTaskString = "{{[[DONE]]}} ~~" + taskString.trim() + " [Link](" + taskUrl + ")~~";
+                var completedTaskString = "{{[[DONE]]}} ";
+                if (completedStrikethrough) {
+                    completedTaskString += "~~";
+                }
+                completedTaskString += taskString.trim() + " [Link](" + taskUrl + ")";
+                if (completedStrikethrough) {
+                    completedTaskString += "~~";
+                };
+                console.info(completedTaskString);
                 await window.roamAlphaAPI.updateBlock(
                     { block: { uid: blockUID, string: completedTaskString.toString(), open: false } });
                 console.log("Task Completed in Todoist");
@@ -862,7 +874,7 @@ export default {
             window.roamjs.extension.smartblocks.unregisterCommand("IMPORTTODOIST");
             window.roamjs.extension.smartblocks.unregisterCommand("REFRESHTODOIST");
         };
-        // window.removeEventListener('hashchange', hashChange);
+        
         observer.disconnect();
         window.removeEventListener('keydown', keyEventHandler, false);
     }
