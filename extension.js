@@ -775,7 +775,6 @@ export default {
                 if (completedStrikethrough) {
                     completedTaskString += "~~";
                 };
-                console.info(completedTaskString);
                 await window.roamAlphaAPI.updateBlock(
                     { block: { uid: blockUID, string: completedTaskString.toString(), open: false } });
                 console.log("Task Completed in Todoist");
