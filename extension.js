@@ -435,10 +435,9 @@ export default {
         async function autoDL() {
             console.info("setting automatic download");
             const regex = /^\d{1,2}$/;
+            var checkEveryMinutes = 15;
             if (regex.test(extensionAPI.settings.get("ttt-auto-time"))) {
-                var checkEveryMinutes = extensionAPI.settings.get("ttt-auto-time");
-            } else {
-                var checkEveryMinutes = "15";
+                checkEveryMinutes = parseInt(extensionAPI.settings.get("ttt-auto-time"));
             }
 
             setTimeout(async () => {
@@ -1092,11 +1091,13 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
             }))
         }
     } else {
-        alert("No items to import");
+        if (!auto) {
+            alert("No items to import");
+        }
     }
 }
 
-// helpers
+// helper functions
 function sendConfigAlert(key) {
     if (key == "API") {
         alert("Please set your API token in the configuration settings via the Roam Depot tab.");
