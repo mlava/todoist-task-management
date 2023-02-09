@@ -5,6 +5,7 @@ var TodoistHeader, key, TodoistOverdue, TodoistCompleted, autoParentUid, autoBlo
 var checkTDInterval = 0;
 var auto = false;
 var completedStrikethrough;
+var RRTag = undefined;
 
 // copied and adapted from https://github.com/dvargas92495/roamjs-components/blob/main/src/writes/createBlock.ts
 const createBlock = (params) => {
@@ -146,7 +147,13 @@ export default {
                     name: "Include Completed",
                     description: "Include completed tasks in Today's tasks",
                     action: { type: "switch" },
-                },
+                },/*
+                {
+                    id: "ttt-import-tag",
+                    name: "Apply tag in Roam Research",
+                    description: "Apply a tag to tasks (leave empty to skip)",
+                    action: { type: "input", placeholder: "Task" },
+                },*/
                 {
                     id: "ttt-completedStrikethrough",
                     name: "Strikethrough Completed Tasks",
@@ -240,11 +247,14 @@ export default {
                         parentUid = uid;
                         await window.roamAlphaAPI.updateBlock(
                             { block: { uid: parentUid, string: TodoistHeader.toString(), open: true } });
-                        blocks.forEach((node, order) => createBlock({
-                            parentUid,
-                            order,
-                            node
-                        }));
+
+                        if (blocks != undefined) {
+                            blocks.forEach((node, order) => createBlock({
+                                parentUid,
+                                order,
+                                node
+                            }));
+                        }
                     }
                 });
             },
@@ -307,7 +317,8 @@ export default {
                             var taskUrl2 = taskUrl[1].split("\"");
                             taskUrl = taskUrl2[0];
                             var taskData = mutation.addedNodes[0]?.innerHTML?.split("Task?id=");
-                            var taskIDClose = taskData[1].slice(0, 10);
+                            var regex = /^(\d{9,10})/gm;
+                            var taskIDClose = taskData[1].match(regex);
                             var rrUID = mutation.target?.id?.slice(-9);
                             closeTask(taskIDClose, taskString, rrUID, taskUrl);
                         }
@@ -319,7 +330,8 @@ export default {
                             var taskUrl2 = taskUrl[1].split("\"");
                             taskUrl = taskUrl2[0];
                             var taskData = mutation.addedNodes[0]?.innerHTML?.split("Task?id=");
-                            var taskIDReopen = taskData[1].slice(0, 10);
+                            var regex = /^(\d{9,10})/gm;
+                            var taskIDReopen = taskData[1].match(regex);
                             var rrUID = mutation.target?.id.slice(-9);
                             reopenTask(taskIDReopen, taskString, rrUID, taskUrl);
                         }
@@ -346,6 +358,11 @@ export default {
                     }
                     TodoistOverdue = extensionAPI.settings.get("ttt-overdue");
                     TodoistCompleted = extensionAPI.settings.get("ttt-completed");
+/*
+                    if (extensionAPI.settings.get("ttt-import-tag")) {
+                        RRTag = extensionAPI.settings.get("ttt-import-tag");
+                    }
+*/
                     TodoistPriority = extensionAPI.settings.get("ttt-priority");
                     TodoistGetDescription = extensionAPI.settings.get("ttt-description");
                     TodoistGetComments = extensionAPI.settings.get("ttt-comments");
@@ -845,7 +862,12 @@ export default {
                 if (!response.ok) {
                     alert("Failed to reopen task in Todoist");
                 } else {
-                    var reopenedTaskString = "{{[[TODO]]}} " + taskString.trim() + " [Link](" + taskUrl + ")";
+                    var reopenedTaskString = "{{[[DONE]]}} " + taskString.trim();
+                    /*
+                if (RRTag) {
+                    reopenedTaskString += " #[["+RRTag+"]]";
+                } */
+                reopenedTaskString += " [Link](" + taskUrl + ")";
                     await window.roamAlphaAPI.updateBlock(
                         { block: { uid: blockUID, string: reopenedTaskString.toString(), open: true } });
                     console.log("Task reopened in Todoist");
@@ -884,6 +906,7 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
     const regex = /^\d{2}-\d{2}-\d{4}$/;
     var datedDNP = false;
     var url, urlC;
+    
     if (regex.test(currentPageUID)) {
         var dateString = currentPageUID.split("-");
         var todoistDate = dateString[2] + "-" + dateString[0] + "-" + dateString[1];
@@ -986,7 +1009,10 @@ async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriori
                             var priority = "4";
                         }
                         itemString += " #Priority-" + priority + "";
-                    }
+                    }/*
+                    if (RRTag != undefined) {
+                        itemString += " #[["+RRTag+"]]";
+                    }*/
                     itemString += " [Link](" + task.url + ")";
 
                     var thisExtras = [];
