@@ -1209,6 +1209,7 @@ export default {
                 var todoistDate = dateString[2] + "-" + dateString[0] + "-" + dateString[1];
                 datedDNP = true;
             }
+            
             if (DNP || auto) {
                 if (TodoistOverdue == true) {
                     url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
@@ -1217,9 +1218,9 @@ export default {
                 }
             } else if (projectID) { // a project page
                 if (Array.isArray(projectID)) {
-                    url = "https://api.todoist.com/rest/v2/tasks?project_id=" + projectID[1];
+                    url = "https://api.todoist.com/rest/v2/tasks?project_id=" + projectID[1].toString();
                 } else {
-                    url = "https://api.todoist.com/rest/v2/tasks?project_id=" + projectID;
+                    url = "https://api.todoist.com/rest/v2/tasks?project_id=" + projectID.toString();
                 }
             } else if (datedDNP) { // dated DNP
                 var today = new Date();
@@ -1238,18 +1239,12 @@ export default {
                 }
             }
 
-            var previousTasks/*, previousCompletedTasks*/, previousComments;
+            var previousTasks, previousComments;
             if (extensionAPI.settings.get("ttt:tasks")) {
                 previousTasks = JSON.parse(extensionAPI.settings.get("ttt:tasks"));
                 extensionAPI.settings.set("ttt:tasks-lastsync", extensionAPI.settings.get("ttt:tasks"));
                 extensionAPI.settings.set("ttt:tasks-lastsync:time", Date.now());
             }
-            /*
-            if (extensionAPI.settings.get("ttt:tasksCompleted")) {
-                previousCompletedTasks = JSON.parse(extensionAPI.settings.get("ttt:tasksCompleted"));
-                extensionAPI.settings.set("ttt:tasksCompleted-lastsync", extensionAPI.settings.get("ttt:tasksCompleted"));
-            }
-            */
             if (extensionAPI.settings.get("ttt:comments")) {
                 previousComments = JSON.parse(extensionAPI.settings.get("ttt:comments"));
                 extensionAPI.settings.set("ttt:comments-lastsync", extensionAPI.settings.get("ttt:comments"));
@@ -1267,7 +1262,7 @@ export default {
 
                 if (taskDate == taskLastDate) { // check that we're comparing the current tree to tasks fetched on the same day
                     // we need to process the existing tree under the Todoist header for new tasks, sub-tasks and comments
-                    if (existingItems != null && existingItems != undefined && existingItems[0][0]?.hasOwnProperty("children")) { // make sure there are tasks under the header
+                    if (existingItems != null && existingItems != undefined && existingItems?.[0]?.[0]?.hasOwnProperty("children")) { // make sure there are tasks under the header
                         for (var o = 0; o < existingItems[0][0].children.length; o++) { // this is the first child level, only tasks but no comments or subtasks
                             const regex = /showTask\?id=([0-9]{9,10})/;
                             let taskID;
@@ -1440,7 +1435,7 @@ export default {
             }
 
             // delete all childblocks to allow creation of new task list
-            if (existingItems[0][0].hasOwnProperty("children")) {
+            if (existingItems?.[0]?.[0].hasOwnProperty("children")) {
                 for (var i = 0; i < existingItems[0][0].children.length; i++) {
                     await window.roamAlphaAPI.deleteBlock({ "block": { "uid": existingItems[0][0].children[i].uid } });
                 }
@@ -1471,8 +1466,8 @@ export default {
                     taskList.push({ id: task.id, uid: "temp" });
                 }
             }
-
-            if (TodoistCompleted) {
+            console.info(TodoistCompleted, DNP, datedDNP)
+            if (TodoistCompleted && (DNP || datedDNP)) {
                 const date = new Date();
                 date.setHours(0, 0, 0, 0);
                 let sinceDate = new Date(date.setMinutes(date.getMinutes() + date.getTimezoneOffset()));
@@ -1494,6 +1489,21 @@ export default {
                 }
                 extensionAPI.settings.set("ttt:tasksCompleted", JSON.stringify(JSON.parse(myTasksC)));
                 extensionAPI.settings.set("ttt:tasksCompleted:time", Date.now());
+            } else if (TodoistCompleted && projectID) {
+                if (Array.isArray(projectID)) {
+                    let id = projectID[1].toString();
+                    projectID = id;
+                }
+                urlC = "https://api.todoist.com/sync/v9/completed/get_all?project_id=" + projectID + "";
+
+                const responseC = await fetch(urlC, requestOptions);
+                const myTasksC = await responseC.text();
+                cTasks = JSON.parse(myTasksC);
+                if (cTasks.items.length > 0) {
+                    for (var i = 0; i < cTasks.items.length; i++) {
+                        taskList.push({ id: cTasks.items[i].id, uid: "temp" });
+                    }
+                }
             }
 
             if (Object.keys(taskList).length > 0) {
