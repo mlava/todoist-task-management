@@ -102,9 +102,11 @@ const prompt = ({
 
 export default {
     onload: ({ extensionAPI }) => {
+        /* // this is here only because I sometimes need to see what I've stored in the settings with each sync
         window.tdExtAPI = {
             get: extensionAPI.settings.get,
         }
+        */
         const config = {
             tabTitle: "Todoist Task Management",
             settings: [
@@ -667,9 +669,9 @@ export default {
                     TodoistOverdue = extensionAPI.settings.get("ttt-overdue");
                     TodoistCompleted = extensionAPI.settings.get("ttt-completed");
                     /*
-                                        if (extensionAPI.settings.get("ttt-import-tag")) {
-                                            RRTag = extensionAPI.settings.get("ttt-import-tag");
-                                        }
+                    if (extensionAPI.settings.get("ttt-import-tag")) {
+                        RRTag = extensionAPI.settings.get("ttt-import-tag");
+                    }
                     */
                     TodoistPriority = extensionAPI.settings.get("ttt-priority");
                     TodoistGetDescription = extensionAPI.settings.get("ttt-description");
@@ -692,7 +694,28 @@ export default {
                         var yyyy = today.getFullYear();
                         autoParentUid = mm + '-' + dd + '-' + yyyy;
                         // find header
-                        autoBlockUid = await window.roamAlphaAPI.q(`[:find ?u :where [?b :block/page ?p] [?b :block/uid ?u] [?b :block/string "${TodoistHeader}"] [?p :block/uid "${autoParentUid}"]]`)?.[0]?.[0];
+                        var autoBlockUid;
+                        let autoBlockUids = await window.roamAlphaAPI.q(`[:find ?u ?s :where [?b :block/page ?p] [?b :block/uid ?u] [?b :block/order ?s] [?b :block/string "${TodoistHeader}"] [?p :block/uid "${autoParentUid}"]]`);
+                        
+                        if (autoBlockUids != undefined && autoBlockUids.length > 1) {
+                            let maxNum = 999;
+                            let uid;
+                            for (var i = 0; i < autoBlockUids.length; i++) {
+                                if (parseInt(autoBlockUids[i][1]) < maxNum) {
+                                    maxNum = parseInt(autoBlockUids[i][1]);
+                                    if (uid) {
+                                        await window.roamAlphaAPI.deleteBlock({ block: { uid: uid } });
+                                    }
+                                    uid = autoBlockUids[i][0].toString();
+                                } else if (parseInt(autoBlockUids[i][1]) > maxNum) {
+                                    await window.roamAlphaAPI.deleteBlock({ block: { uid: autoBlockUids[i][0] } });
+                                }
+                            }
+                            autoBlockUid = uid;
+                        } else if (autoBlockUids != undefined && autoBlockUids.length == 1) {
+                            autoBlockUid = autoBlockUids[0][0].toString();
+                        }
+                        
                         if (autoBlockUid == undefined) {
                             const uid = window.roamAlphaAPI.util.generateUID();
                             await window.roamAlphaAPI.createBlock({
@@ -1466,7 +1489,7 @@ export default {
                     taskList.push({ id: task.id, uid: "temp" });
                 }
             }
-            console.info(TodoistCompleted, DNP, datedDNP)
+            
             if (TodoistCompleted && (DNP || datedDNP)) {
                 const date = new Date();
                 date.setHours(0, 0, 0, 0);
