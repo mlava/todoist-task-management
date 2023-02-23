@@ -1,6 +1,7 @@
 This extension allows you to manage your Todoist tasks from within your Roam Research graph.
 
 **NEW:**
+- Now compatible with the new user-defined hotkeys function - see Hotkeys option in Roam Research Settings
 - Rearranged config settings for easier introduction for new users
 - BETA - if using automatic sync, option to parse your DNP for new tasks, subtasks and comments, and then sync them to Todoist.
   - the extension will check the blocks nested under your import heading
