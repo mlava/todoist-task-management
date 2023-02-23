@@ -447,7 +447,7 @@ export default {
             extensionAPI.settings.panel.create(config);
         }
 
-        window.roamAlphaAPI.ui.commandPalette.addCommand({
+        extensionAPI.ui.commandPalette.addCommand({
             label: "Import tasks from Todoist",
             callback: () => {
                 const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
@@ -510,15 +510,15 @@ export default {
             );
         }
 
-        window.roamAlphaAPI.ui.commandPalette.addCommand({
+        extensionAPI.ui.commandPalette.addCommand({
             label: "Create task in Todoist",
             callback: () => createTodoistTask(),
         });
-        window.roamAlphaAPI.ui.commandPalette.addCommand({
+        extensionAPI.ui.commandPalette.addCommand({
             label: "Link to Todoist project via clipboard",
             callback: () => linkTodoistProject(),
         });
-        window.roamAlphaAPI.ui.commandPalette.addCommand({
+        extensionAPI.ui.commandPalette.addCommand({
             label: "Reschedule task(s) in Todoist",
             callback: () => moveTask(),
         });
@@ -1676,18 +1676,6 @@ export default {
         }
     },
     onunload: () => {
-        window.roamAlphaAPI.ui.commandPalette.removeCommand({
-            label: 'Import tasks from Todoist'
-        });
-        window.roamAlphaAPI.ui.commandPalette.removeCommand({
-            label: 'Create task in Todoist'
-        });
-        window.roamAlphaAPI.ui.commandPalette.removeCommand({
-            label: 'Link to Todoist project via clipboard'
-        });
-        window.roamAlphaAPI.ui.commandPalette.removeCommand({
-            label: 'Reschedule task(s) in Todoist'
-        });
         window.roamAlphaAPI.ui.blockContextMenu.removeCommand({
             label: "Reschedule task(s) in Todoist"
         });
