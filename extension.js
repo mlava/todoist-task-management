@@ -696,7 +696,7 @@ export default {
                         // find header
                         var autoBlockUid;
                         let autoBlockUids = await window.roamAlphaAPI.q(`[:find ?u ?s :where [?b :block/page ?p] [?b :block/uid ?u] [?b :block/order ?s] [?b :block/string "${TodoistHeader}"] [?p :block/uid "${autoParentUid}"]]`);
-                        
+
                         if (autoBlockUids != undefined && autoBlockUids.length > 1) {
                             let maxNum = 999;
                             let uid;
@@ -715,7 +715,7 @@ export default {
                         } else if (autoBlockUids != undefined && autoBlockUids.length == 1) {
                             autoBlockUid = autoBlockUids[0][0].toString();
                         }
-                        
+
                         if (autoBlockUid == undefined) {
                             const uid = window.roamAlphaAPI.util.generateUID();
                             await window.roamAlphaAPI.createBlock({
@@ -1232,7 +1232,7 @@ export default {
                 var todoistDate = dateString[2] + "-" + dateString[0] + "-" + dateString[1];
                 datedDNP = true;
             }
-            
+
             if (DNP || auto) {
                 if (TodoistOverdue == true) {
                     url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
@@ -1341,7 +1341,7 @@ export default {
                                     if (regexCommentString.test(existingItems[0][0].children[o].children[t].string)) { // this block is a comment, get string
                                         finalchildString = existingItems[0][0].children[o].children[t].string.match(regexCommentString)[1];
                                     } else if (regexTaskString.test(existingItems[0][0].children[o].children[t].string)) {
-                                        childString= existingItems[0][0].children[o].children[t].string.match(regexTaskString)[1];
+                                        childString = existingItems[0][0].children[o].children[t].string.match(regexTaskString)[1];
                                         if (childString.match("#Priority")) {
                                             let finalchildString2 = childString.split("#Priority");
                                             finalchildString = finalchildString2[0];
@@ -1352,7 +1352,7 @@ export default {
                                     if (finalchildString != undefined && finalchildString != null) {
                                         finalchildString1 = finalchildString.trim();
                                     }
-                                    
+
                                     if (childID == undefined && commentID == undefined) { // this is not a known sub-task or comment
                                         let todTaskId = existingItems[0][0].children[o].string; // get parent Todoist task id
                                         var parentID;
@@ -1489,7 +1489,7 @@ export default {
                     taskList.push({ id: task.id, uid: "temp" });
                 }
             }
-            
+
             if (TodoistCompleted && (DNP || datedDNP)) {
                 const date = new Date();
                 date.setHours(0, 0, 0, 0);
@@ -1616,6 +1616,10 @@ export default {
                                         }
                                         subitemString += " [Link](" + subTaskList[k].url + ")";
                                         thisExtras.push({ "text": subitemString.toString(), });
+                                        var index = subTaskList.indexOf(subTaskList[k]);
+                                        if (index !== -1) {
+                                            subTaskList.splice(index, 1);
+                                        }
                                     }
                                 }
                             }
@@ -1627,21 +1631,41 @@ export default {
                             }
                         }
                     }
-                    if (TodoistCompleted && cTasks.items.length > 0) {
-                        for (var j = 0; j < cTasks.items.length; j++) {
-                            if (taskList[i].id == cTasks.items[j].id) {
-                                // print task
-                                var itemString = "{{[[DONE]]}} ";
-                                if (completedStrikethrough) {
-                                    itemString += "~~";
-                                }
-                                itemString += cTasks.items[j].content + " [Link](https://todoist.com/showTask?id=" + cTasks.items[j].task_id + ")";
-                                if (completedStrikethrough) {
-                                    itemString += "~~";
-                                }
-                                output.push({ "text": itemString.toString(), });
+                }
+
+                if (subTaskList != null && subTaskList.length > 0) {
+                    for (var l = 0; l < subTaskList.length; l++) {
+                        var itemString = "";
+                        itemString += "{{[[TODO]]}} ";
+                        itemString += "" + subTaskList[l].content + "";
+                        if (TodoistPriority == true) {
+                            if (task.priority == "4") {
+                                var priority = "1";
+                            } else if (task.priority == "3") {
+                                var priority = "2";
+                            } else if (task.priority == "2") {
+                                var priority = "3";
+                            } else if (task.priority == "1") {
+                                var priority = "4";
                             }
+                            itemString += " #Priority-" + subTaskList[l].priority + "";
                         }
+                        itemString += " [Link](" + subTaskList[l].url + ")";
+                        output.push({ "text": itemString.toString(), });
+                    }
+                }
+                if (TodoistCompleted && cTasks.items.length > 0) {
+                    for (var j = 0; j < cTasks.items.length; j++) {
+                        // print task
+                        var itemString = "{{[[DONE]]}} ";
+                        if (completedStrikethrough) {
+                            itemString += "~~";
+                        }
+                        itemString += cTasks.items[j].content + " [Link](https://todoist.com/showTask?id=" + cTasks.items[j].task_id + ")";
+                        if (completedStrikethrough) {
+                            itemString += "~~";
+                        }
+                        output.push({ "text": itemString.toString(), });
                     }
                 }
 
