@@ -516,7 +516,33 @@ export default {
         });
         extensionAPI.ui.commandPalette.addCommand({
             label: "Link to Todoist project via clipboard",
-            callback: () => linkTodoistProject(),
+            callback: () => {
+                linkTodoistProject().then(async (blocks) => {
+                    var uid = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
+                    if (uid == null) { // check for log page
+                        var uri = window.location.href;
+                        const regex = /^https:\/\/roamresearch.com\/.+\/(app|offline)\/\w+$/; // log page
+                        if (regex.test(uri)) { // definitely a log page, so get the corresponding page uid
+                            var today = new Date();
+                            var dd = String(today.getDate()).padStart(2, '0');
+                            var mm = String(today.getMonth() + 1).padStart(2, '0');
+                            var yyyy = today.getFullYear();
+                            uid = mm + '-' + dd + '-' + yyyy;
+                        }
+                    }
+                    var thisBlock = window.roamAlphaAPI.util.generateUID();
+                    await window.roamAlphaAPI.createBlock({
+                        location: { "parent-uid": uid, order: 0 },
+                        block: { string: TodoistHeader.toString(), uid: thisBlock }
+                    });
+                    parentUid = thisBlock;
+                    blocks.forEach((node, order) => createBlock({
+                        parentUid,
+                        order,
+                        node
+                    }));
+                });
+            }
         });
         extensionAPI.ui.commandPalette.addCommand({
             label: "Reschedule task(s) in Todoist",
@@ -1053,9 +1079,11 @@ export default {
                     } else {
                         TodoistHeader = extensionAPI.settings.get("ttt-import-header");
                     }
-                    const TodoistOverdue = extensionAPI.settings.get("ttt-overdue");
-                    const TodoistPriority = extensionAPI.settings.get("ttt-priority");
-                    const TodoistGetDescription = extensionAPI.settings.get("ttt-description");
+                    TodoistOverdue = extensionAPI.settings.get("ttt-overdue");
+                    TodoistPriority = extensionAPI.settings.get("ttt-priority");
+                    TodoistGetDescription = extensionAPI.settings.get("ttt-description");
+                    TodoistCompleted = extensionAPI.settings.get("ttt-completed");
+                    completedStrikethrough = extensionAPI.settings.get("ttt-completedStrikethrough");
 
                     const clipText = await navigator.clipboard.readText();
                     const regex = /^\d{10}$/;
@@ -1109,7 +1137,7 @@ export default {
                             }
                         }
                     }
-                    importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, clipText, false, false);
+                    return importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, clipText, false, startBlock, false, null, null, TodoistCompleted, completedStrikethrough);
                 }
             }
         }
