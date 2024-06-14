@@ -646,26 +646,28 @@ export default {
             const callback = function (mutationsList, observer) {
                 for (const mutation of mutationsList) {
                     if (mutation.addedNodes[0]?.childNodes[0]?.childNodes[0]?.control?.checked == true) {
-                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://todoist.com/showTask?id=")) {
+                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://todoist.com/app/task")) {
                             observer.disconnect();
-                            var taskString = mutation.addedNodes[0]?.innerText?.slice(0, mutation.addedNodes[0]?.innerText?.length - 4);
+                            var taskString = mutation.addedNodes[0]?.innerText?.trim();
+                            taskString = taskString.split(" Link")[0];
                             var taskUrl = mutation.addedNodes[0]?.innerHTML.split("href=\"");
                             var taskUrl2 = taskUrl[1].split("\"");
                             taskUrl = taskUrl2[0];
-                            var taskData = mutation.addedNodes[0]?.innerHTML?.split("Task?id=");
+                            var taskData = mutation.addedNodes[0]?.innerHTML?.split("task/");
                             var regex = /^(\d{9,10})/gm;
                             var taskIDClose = taskData[1].match(regex);
                             var rrUID = mutation.target?.id?.slice(-9);
                             closeTask(taskIDClose, taskString, rrUID, taskUrl);
                         }
                     } else if (mutation.addedNodes[0]?.childNodes[0]?.childNodes[0]?.control?.checked == false) {
-                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://todoist.com/showTask?id=")) {
+                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://todoist.com/app/task")) {
                             observer.disconnect();
-                            var taskString = mutation.addedNodes[0]?.innerText?.slice(0, mutation.addedNodes[0]?.innerText?.length - 4);
+                            var taskString = mutation.addedNodes[0]?.innerText?.trim();
+                            taskString = taskString.split(" Link")[0];
                             var taskUrl = mutation.addedNodes[0]?.innerHTML.split("href=\"");
                             var taskUrl2 = taskUrl[1].split("\"");
                             taskUrl = taskUrl2[0];
-                            var taskData = mutation.addedNodes[0]?.innerHTML?.split("Task?id=");
+                            var taskData = mutation.addedNodes[0]?.innerHTML?.split("task/");
                             var regex = /^(\d{9,10})/gm;
                             var taskIDReopen = taskData[1].match(regex);
                             var rrUID = mutation.target?.id.slice(-9);
@@ -1156,6 +1158,7 @@ export default {
             };
             var url = "https://api.todoist.com/rest/v2/tasks/" + taskIDClose + "/close";
             const response = await fetch(url, requestOptions);
+            
             if (!response.ok) {
                 alert("Failed to complete task in Todoist");
             } else {
@@ -1235,7 +1238,7 @@ export default {
                 if (!response.ok) {
                     alert("Failed to reopen task in Todoist");
                 } else {
-                    var reopenedTaskString = "{{[[DONE]]}} " + taskString.trim();
+                    var reopenedTaskString = "{{[[TODO]]}} " + taskString.trim();
                     /*
                 if (RRTag) {
                     reopenedTaskString += " #[["+RRTag+"]]";
