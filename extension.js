@@ -646,7 +646,7 @@ export default {
             const callback = function (mutationsList, observer) {
                 for (const mutation of mutationsList) {
                     if (mutation.addedNodes[0]?.childNodes[0]?.childNodes[0]?.control?.checked == true) {
-                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://todoist.com/app/task")) {
+                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://app.todoist.com/app/task")) {
                             observer.disconnect();
                             var taskString = mutation.addedNodes[0]?.innerText?.trim();
                             taskString = taskString.split(" Link")[0];
@@ -660,7 +660,7 @@ export default {
                             closeTask(taskIDClose, taskString, rrUID, taskUrl);
                         }
                     } else if (mutation.addedNodes[0]?.childNodes[0]?.childNodes[0]?.control?.checked == false) {
-                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://todoist.com/app/task")) {
+                        if (mutation.addedNodes[0]?.innerHTML?.includes("https://app.todoist.com/app/task")) {
                             observer.disconnect();
                             var taskString = mutation.addedNodes[0]?.innerText?.trim();
                             taskString = taskString.split(" Link")[0];
@@ -1158,7 +1158,6 @@ export default {
             };
             var url = "https://api.todoist.com/rest/v2/tasks/" + taskIDClose + "/close";
             const response = await fetch(url, requestOptions);
-            
             if (!response.ok) {
                 alert("Failed to complete task in Todoist");
             } else {
