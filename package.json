@@ -1,0 +1,26 @@
+{
+  "name": "todoist-task-management",
+  "version": "1.0.0",
+  "description": "Todoist tasks in your Roam Reseearch graph",
+  "main": "index.js",
+  "scripts": {
+    "build": "webpack"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mlava/todoist-task-management.git"
+  },
+  "author": "Mark Lavercombe",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mlava/todoist-task-management/issues"
+  },
+  "homepage": "https://github.com/mlava/todoist-task-management#readme",
+  "devDependencies": {
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "izitoast": "^1.4.0"
+  }
+}

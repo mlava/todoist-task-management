@@ -1,6 +1,15 @@
 This extension allows you to manage your Todoist tasks from within your Roam Research graph.
 
 **NEW:**
+- new workflow to connect a project to a page
+
+![Project Linking Menu](image.png)
+
+The Command Palette option to link a project is now 'Link a Todoist project'.
+This will trigger a pop-up menu with a select menu that lists all of your projects. Simply select the one you want to link and the extension does the rest.
+
+
+**Previously:**
 - Fixed: Issue with completing tasks fixed
 - Now compatible with the new user-defined hotkeys function - see Hotkeys option in Roam Research Settings
 - Rearranged config settings for easier introduction for new users
