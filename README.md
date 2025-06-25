@@ -43,6 +43,3 @@ Automatic sync of daily tasks in both directions!
 This video shows most of this in action:
 
 https://www.loom.com/share/eecfe93ec49844ab9ec0f58ee301a75b
-
-TODO:
-1. implement keyboard shortcuts for each Command Palette command
