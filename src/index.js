@@ -1,5 +1,4 @@
 import iziToast from "izitoast";
-
 let keyEventHandler = undefined;
 var observer, targetNode1, targetNode2, obsConfig = undefined;
 let parentUid = undefined;
@@ -10,6 +9,7 @@ var auto = false;
 var completedStrikethrough;
 var RRTag = undefined;
 var advancedChildManagement = false;
+var isImportRunning = false;
 
 // copied and adapted from https://github.com/dvargas92495/roamjs-components/blob/main/src/writes/createBlock.ts
 const createBlock = (params) => {
@@ -104,11 +104,6 @@ const prompt = ({
 
 export default {
     onload: ({ extensionAPI }) => {
-        /* // this is here only because I sometimes need to see what I've stored in the settings with each sync
-        window.tdExtAPI = {
-            get: extensionAPI.settings.get,
-        }
-        */
         const config = {
             tabTitle: "Todoist Task Management",
             settings: [
@@ -594,6 +589,7 @@ export default {
                 }
             }
         }
+
         async function setAdvFeat(evt) {
             if (evt.target.checked) {
                 advancedChildManagement = true;
@@ -1275,482 +1271,504 @@ export default {
             }
         }
 
-        async function importTasks(myToken, TodoistHeader, TodoistOverdue, TodoistPriority, TodoistGetDescription, projectID, DNP, currentPageUID, auto, autoBlockUid, SB, TodoistCompleted, completedStrikethrough) {
-            const regex = /^\d{2}-\d{2}-\d{4}$/;
-            var datedDNP = false;
-            var url, urlC;
-
-            if (regex.test(currentPageUID)) {
-                var dateString = currentPageUID.split("-");
-                var todoistDate = dateString[2] + "-" + dateString[0] + "-" + dateString[1];
-                datedDNP = true;
+        async function importTasks(
+            myToken,
+            TodoistHeader,
+            TodoistOverdue,
+            TodoistPriority,
+            TodoistGetDescription,
+            projectID,
+            DNP,
+            currentPageUID,
+            auto,
+            autoBlockUid,
+            SB,
+            TodoistCompleted,
+            completedStrikethrough,
+        ) {
+            if (isImportRunning) {
+                // console.info("importTasks: Already running. Skipping this run.");
+                return;
             }
+            isImportRunning = true;
 
-            if (DNP || auto) {
-                if (TodoistOverdue == true) {
-                    url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
-                } else {
-                    url = "https://api.todoist.com/rest/v2/tasks?filter=Today";
+            try {
+                // ---------------- URL selection for ACTIVE tasks ----------------
+                const dateRegex = /^\d{2}-\d{2}-\d{4}$/;
+                let datedDNP = false;
+                let todoistDate = null;
+                let url, urlC;
+
+                if (dateRegex.test(currentPageUID)) {
+                    const [dd, mm, yyyy] = currentPageUID.split("-");
+                    todoistDate = `${yyyy}-${mm}-${dd}`;
+                    datedDNP = true;
                 }
-            } else if (projectID) { // a project page
-                if (Array.isArray(projectID)) {
-                    url = "https://api.todoist.com/rest/v2/tasks?project_id=" + projectID[1].toString();
-                } else {
-                    url = "https://api.todoist.com/rest/v2/tasks?project_id=" + projectID.toString();
-                }
-            } else if (datedDNP) { // dated DNP
-                var today = new Date();
-                var dd = String(today.getDate()).padStart(2, '0');
-                var mm = String(today.getMonth() + 1).padStart(2, '0');
-                var yyyy = today.getFullYear();
-                today = mm + '-' + dd + '-' + yyyy;
-                if (currentPageUID != today) {
-                    url = "https://api.todoist.com/rest/v2/tasks?filter=" + todoistDate;
-                } else {
-                    if (TodoistOverdue == true) {
-                        url = "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue";
+
+                if (DNP || auto) {
+                    url = TodoistOverdue
+                        ? "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue"
+                        : "https://api.todoist.com/rest/v2/tasks?filter=Today";
+                } else if (projectID) {
+                    url = Array.isArray(projectID)
+                        ? `https://api.todoist.com/rest/v2/tasks?project_id=${projectID[1]}`
+                        : `https://api.todoist.com/rest/v2/tasks?project_id=${projectID}`;
+                } else if (datedDNP) {
+                    const today = new Date();
+                    const todayStr = `${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}-${today.getFullYear()}`;
+                    if (currentPageUID !== todayStr) {
+                        url = `https://api.todoist.com/rest/v2/tasks?filter=${todoistDate}`;
                     } else {
-                        url = "https://api.todoist.com/rest/v2/tasks?filter=Today";
+                        url = TodoistOverdue
+                            ? "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue"
+                            : "https://api.todoist.com/rest/v2/tasks?filter=Today";
                     }
                 }
-            }
 
-            var previousTasks, previousComments;
-            if (extensionAPI.settings.get("ttt:tasks")) {
-                previousTasks = JSON.parse(extensionAPI.settings.get("ttt:tasks"));
-                extensionAPI.settings.set("ttt:tasks-lastsync", extensionAPI.settings.get("ttt:tasks"));
-                extensionAPI.settings.set("ttt:tasks-lastsync:time", Date.now());
-            }
-            if (extensionAPI.settings.get("ttt:comments")) {
-                previousComments = JSON.parse(extensionAPI.settings.get("ttt:comments"));
-                extensionAPI.settings.set("ttt:comments-lastsync", extensionAPI.settings.get("ttt:comments"));
-            }
-            existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid :block/order :edit/time {:block/children ...} ]) :where [?page :block/uid "${autoBlockUid}"] ]`);
+                // console.info("[Todoist] Active tasks URL:", url);
 
-            var myHeaders = new Headers();
-            var bearer = 'Bearer ' + myToken;
-            myHeaders.append("Authorization", bearer);
-            myHeaders.append("Content-Type", "application/json");
+                // ---------------- Load caches (for parent lookup on completed subtasks) ----------------
+                let previousTasks = [];
+                if (extensionAPI.settings.get("ttt:tasks")) {
+                    previousTasks = JSON.parse(extensionAPI.settings.get("ttt:tasks"));
+                    extensionAPI.settings.set("ttt:tasks-lastsync", extensionAPI.settings.get("ttt:tasks"));
+                    extensionAPI.settings.set("ttt:tasks-lastsync:time", Date.now());
+                }
+                let previousComments = [];
+                if (extensionAPI.settings.get("ttt:comments")) {
+                    previousComments = JSON.parse(extensionAPI.settings.get("ttt:comments"));
+                    extensionAPI.settings.set("ttt:comments-lastsync", extensionAPI.settings.get("ttt:comments"));
+                }
 
-            if (advancedChildManagement) { // user can decide whether to turn on these features or not, in Roam Depot settings
-                var taskDate = new Date(extensionAPI.settings.get("ttt:tasks:time")).getDate();
-                var taskLastDate = new Date(extensionAPI.settings.get("ttt:tasks-lastsync:time")).getDate();
+                const prevById = new Map();
+                if (Array.isArray(previousTasks)) {
+                    for (const t of previousTasks) {
+                        prevById.set(String(t.id), { parent_id: t.parent_id || null, content: t.content || "" });
+                    }
+                }
+                // console.info("[Cache] previousTasks size:", previousTasks?.length || 0);
 
-                if (taskDate == taskLastDate) { // check that we're comparing the current tree to tasks fetched on the same day
-                    // we need to process the existing tree under the Todoist header for new tasks, sub-tasks and comments
-                    if (existingItems != null && existingItems != undefined && existingItems?.[0]?.[0]?.hasOwnProperty("children")) { // make sure there are tasks under the header
-                        for (var o = 0; o < existingItems[0][0].children.length; o++) { // this is the first child level, only tasks but no comments or subtasks
-                            const regex = /showTask\?id=([0-9]{9,10})/;
-                            let taskID;
-                            if (regex.test(existingItems[0][0].children[o].string)) {
-                                taskID = existingItems[0][0].children[o].string.match(regex)[1];
+                // ---------------- Scan existing header subtree (dedupe + parent UIDs) ----------------
+                const existingQuery = await window.roamAlphaAPI.q(
+                    `[:find (pull ?p [:node/title :block/string :block/uid {:block/children ...}]) :where [?p :block/uid "${autoBlockUid}"]]`
+                );
+                const headerNode = existingQuery?.[0]?.[0] || null;
+                // console.info("[Roam] Header node found:", !!headerNode);
+
+                // Accept both numeric and string Todoist IDs in URLs
+                const TASK_URL_ANY_ID = /todoist\.com\/(?:app\/task\/|showTask\?id=)([A-Za-z0-9_-]{6,}|\d{9,20})/;
+                const COMMENT_ID_RE = /#comment-([0-9]{9,10})/;
+
+                const existingTaskMap = new Map();   // id -> { uid, done } (REAL task lines only)
+                const parentUidByTaskId = new Map(); // id -> uid of the REAL parent task block
+                const existingCommentIds = new Set();
+                const existingHeuristicKeys = new Set(); // content+state fallback dedupe
+
+                function normalizeForKey(s) {
+                    if (!s) return "";
+                    // strip DONE/TODO markup, strikethrough, priority, and link
+                    let x = s.replace(/{{\[\[(TODO|DONE)\]\]}}\s*/g, "")
+                        .replace(/~~/g, "")
+                        .replace(/\s#Priority-\d\b/g, "")
+                        .replace(/\s\[Link]\([^)]+\)/g, "")
+                        .trim()
+                        .toLowerCase();
+                    return x;
+                }
+                function lineState(s) {
+                    return s.includes("{{[[DONE]]}}") ? "done"
+                        : s.includes("{{[[TODO]]}}") ? "todo"
+                            : "other";
+                }
+
+                function walk(block) {
+                    if (!block) return;
+                    const s = block.string || "";
+                    const state = lineState(s);
+                    const isTaskLine = state === "todo" || state === "done";
+
+                    // Heuristic key for content+state dedupe
+                    if (isTaskLine) {
+                        const key = `${normalizeForKey(s)}|${state}`;
+                        if (key.length > 1) existingHeuristicKeys.add(key);
+                    }
+
+                    // Extract Todoist task id from URL (works for both URL formats)
+                    const m = s.match(TASK_URL_ANY_ID);
+                    const id = m ? m[1] : null;
+
+                    // Only map REAL task lines (avoid comment lines) for parent/known tasks
+                    if (id && isTaskLine) {
+                        existingTaskMap.set(id, { uid: block.uid, done: state === "done" });
+                        if (!parentUidByTaskId.has(id)) parentUidByTaskId.set(id, block.uid);
+                    }
+
+                    // Track existing comments to avoid duplicates
+                    const cm = s.match(COMMENT_ID_RE);
+                    if (cm) existingCommentIds.add(cm[1]);
+
+                    if (Array.isArray(block.children)) block.children.forEach(walk);
+                }
+                if (headerNode?.children) headerNode.children.forEach(walk);
+
+                // console.info("[Roam] existingTaskMap size:", existingTaskMap.size);
+                // console.info("[Roam] parentUidByTaskId size:", parentUidByTaskId.size);
+                // console.info("[Roam] existingCommentIds size:", existingCommentIds.size);
+                // console.info("[Roam] existingHeuristicKeys size:", existingHeuristicKeys.size);
+
+                // ---------------- HTTP setup ----------------
+                const myHeaders = new Headers();
+                myHeaders.append("Authorization", "Bearer " + myToken);
+                myHeaders.append("Content-Type", "application/json");
+                const requestOptions = { method: "GET", headers: myHeaders, redirect: "follow" };
+
+                // ---------------- Fetch ACTIVE tasks ----------------
+                const resp = await fetch(url, requestOptions);
+                const activeTasks = await resp.json();
+                // console.info("[Todoist] Active tasks count:", Array.isArray(activeTasks) ? activeTasks.length : 0);
+
+                extensionAPI.settings.set("ttt:tasks", JSON.stringify(activeTasks));
+                extensionAPI.settings.set("ttt:tasks:time", Date.now());
+
+                // Split parents/subtasks among ACTIVE
+                const activeParents = [];
+                const activeSubtasksByParent = new Map(); // parentId(str) -> array of subtasks
+                for (const t of activeTasks || []) {
+                    if (t?.parent_id) {
+                        const pid = String(t.parent_id);
+                        if (!activeSubtasksByParent.has(pid)) activeSubtasksByParent.set(pid, []);
+                        activeSubtasksByParent.get(pid).push(t);
+                    } else {
+                        activeParents.push(t);
+                    }
+                }
+                // console.info("[Active] Parents:", activeParents.length);
+                // console.info("[Active] Parents-with-subtasks map size:", activeSubtasksByParent.size);
+
+                // ---------------- Fetch COMPLETED items (by completion date, local day) ----------------
+                let completedItems = [];
+                if (TodoistCompleted && (DNP || datedDNP || projectID)) {
+                    // local midnight today and tomorrow
+                    function startOfDayLocal(d = new Date()) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+                    function fmtLocalMidnight(d) {
+                        const yyyy = d.getFullYear();
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        return `${yyyy}-${mm}-${dd}T00:00:00`; // local midnight, no 'Z'
+                    }
+                    const todayStart = startOfDayLocal();
+                    const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+                    const sinceLocal = fmtLocalMidnight(todayStart);
+                    const untilLocal = fmtLocalMidnight(tomorrowStart);
+
+                    urlC = `https://api.todoist.com/api/v1/tasks/completed/by_completion_date?since=${encodeURIComponent(sinceLocal)}&until=${encodeURIComponent(untilLocal)}`;
+                    // console.info("[Todoist] Completed URL:", urlC);
+
+                    const cResp = await fetch(urlC, requestOptions);
+                    const completedJSON = await cResp.json();
+                    completedItems = completedJSON?.items || [];
+                    extensionAPI.settings.set("ttt:tasksCompleted", JSON.stringify(completedJSON));
+                    extensionAPI.settings.set("ttt:tasksCompleted:time", Date.now());
+                    // console.info("[Todoist] Completed items count:", completedItems.length);
+                }
+
+                // ---------------- Helpers (strings/builders) ----------------
+                const isDoneLineNode = (n) => (n?.text || "").includes("{{[[DONE]]}}");
+                const isTaskChildNode = (n) => {
+                    const s = (n?.text || "");
+                    return s.includes("{{[[TODO]]}}") || s.includes("{{[[DONE]]}}");
+                };
+                const canonicalLinkForId = (id) => `https://app.todoist.com/app/task/${id}`;
+
+                function priorityNumber(p) {
+                    if (p == "4") return "1";
+                    if (p == "3") return "2";
+                    if (p == "2") return "3";
+                    return "4";
+                }
+                function buildTodoLine(task) {
+                    const id = String(task.id);
+                    const link = canonicalLinkForId(id);
+                    let str = "{{[[TODO]]}} " + task.content;
+                    if (TodoistPriority && task.priority) str += " #Priority-" + priorityNumber(task.priority);
+                    str += ` [Link](${link})`;
+                    return { text: str, id };
+                }
+                function buildDoneLineFromCompleted(it) {
+                    const id = String(it.id); // v1 completed endpoint uses string IDs
+                    const link = canonicalLinkForId(id);
+                    let txt = "{{[[DONE]]}} ";
+                    if (completedStrikethrough) txt += "~~";
+                    txt += `${it.content} [Link](${link})`;
+                    if (completedStrikethrough) txt += "~~";
+                    return { text: txt, id };
+                }
+                async function fetchComments(taskId) {
+                    const url = `https://api.todoist.com/rest/v2/comments?task_id=${taskId}`;
+                    const r = await fetch(url, requestOptions);
+                    if (!r.ok) return [];
+                    const json = await r.json();
+                    // console.info(`[Todoist] Comments for task ${taskId}:`, json.length);
+                    return json;
+                }
+                async function buildExtras(task) {
+                    const extras = [];
+                    if (TodoistGetDescription && task.description) {
+                        extras.push({ text: task.description.toString() });
+                    }
+                    if (TodoistGetComments && task.comment_count > 0) {
+                        const comms = await fetchComments(task.id);
+                        for (const c of comms) {
+                            if (existingCommentIds.has(String(c.id))) continue;
+                            let commentString = c.content || "";
+                            if (c.attachment) {
+                                if (c.attachment.file_type === "application/pdf") commentString = `{{pdf: ${c.attachment.file_url}}}`;
+                                else if (c.attachment.file_type === "image/jpeg" || c.attachment.file_type === "image/png") commentString = `![](${c.attachment.file_url})`;
+                                else if (c.attachment.file_type === "text/html") commentString = `${c.content} [Email Body](${c.attachment.file_url})`;
                             }
-                            if (taskID == undefined || taskID == null) { // there wasn't a task link, so must be a new task
-                                await createTodoistTask(existingItems[0][0].children[o].string.toString(), existingItems[0][0].children[o].uid, null, existingItems[0][0].children[o].uid);
-                            } else { // this is already a task, so check if we've changed the name
-                                let checkString = existingItems[0][0].children[o].string.trim();
-                                let checkString1 = checkString.split("[Link]");
-                                let checkString2 = checkString1[0].split("{{[[TODO]]}}");
-                                let finalString = checkString2[1];
-                                if (checkString2[1] && checkString2[1].match("#Priority")) {
-                                    finalString = checkString2[1].split("#Priority")[0].trim();
-                                }
-                                for (var p = 0; p < previousTasks.length; p++) {
-                                    if (taskID == previousTasks[p].id) { // found a matching task id from previous sync
-                                        if (finalString != previousTasks[p].content) { // we must have changed the task name, so update it 
-                                            var url3 = "https://api.todoist.com/rest/v2/tasks/" + previousTasks[p].id + "";
-                                            let taskContent = JSON.stringify({
-                                                "content": finalString
-                                            });
-                                            var requestOptions3 = {
-                                                method: 'POST',
-                                                headers: myHeaders,
-                                                redirect: 'follow',
-                                                body: taskContent
-                                            };
-                                            const response3 = await fetch(url3, requestOptions3);
-                                            if (!response3.ok) {
-                                                alert("Failed to update task in Todoist");
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // now, check if it has children (subtasks, comments or description)
-                            if (existingItems[0][0].children[o].hasOwnProperty("children")) { // there are children to this task
-                                for (var t = 0; t < existingItems[0][0].children[o].children.length; t++) {
-                                    const regexTaskID = /showTask\?id=([0-9]{9,10})/;
-                                    const regexTaskString = /{{\[\[TODO\]\]}} (.+) \[Link\]\(.+showTask\?id=[0-9]{9,10}\)/;
-                                    const regexCommentID = /comment-([0-9]{9,10})/;
-                                    const regexCommentString = /(.+) \[Link\]\(.+\#comment-[0-9]{9,10}\)/;
-                                    let childID, commentID, childString, finalchildString, finalchildString1;
-                                    if (regexCommentID.test(existingItems[0][0].children[o].children[t].string)) { // this block has a commentID
-                                        commentID = existingItems[0][0].children[o].children[t].string.match(regexCommentID)[1].toString();
-                                    } else if (regexTaskID.test(existingItems[0][0].children[o].children[t].string)) { // this block has a taskID
-                                        childID = existingItems[0][0].children[o].children[t].string.match(regexTaskID)[1];
-                                    }
-
-                                    if (regexCommentString.test(existingItems[0][0].children[o].children[t].string)) { // this block is a comment, get string
-                                        finalchildString = existingItems[0][0].children[o].children[t].string.match(regexCommentString)[1];
-                                    } else if (regexTaskString.test(existingItems[0][0].children[o].children[t].string)) {
-                                        childString = existingItems[0][0].children[o].children[t].string.match(regexTaskString)[1];
-                                        if (childString.match("#Priority")) {
-                                            let finalchildString2 = childString.split("#Priority");
-                                            finalchildString = finalchildString2[0];
-                                        }
-                                    } else {
-                                        finalchildString = existingItems[0][0].children[o].children[t].string;
-                                    }
-                                    if (finalchildString != undefined && finalchildString != null) {
-                                        finalchildString1 = finalchildString.trim();
-                                    }
-
-                                    if (childID == undefined && commentID == undefined) { // this is not a known sub-task or comment
-                                        let todTaskId = existingItems[0][0].children[o].string; // get parent Todoist task id
-                                        var parentID;
-                                        if (todTaskId.includes("Task?id=")) { // get the parent task id from the tree
-                                            var taskData = todTaskId.split("Task?id=");
-                                            var regex1 = /^(\d{9,10})/gm;
-                                            if (taskData[1]) {
-                                                let parentID1 = taskData[1].match(regex1);
-                                                parentID = parentID1[0];
-                                            }
-                                        } else { // we must have just created the parent task, so existingItems doesn't have the ID yet
-                                            let parentString = await window.roamAlphaAPI.q(
-                                                `[:find ?u :where [?p :block/string ?u] [?p :block/children ?e] [?e :block/uid "${existingItems[0][0].children[o].children[t].uid}"]]`
-                                            )?.[0]?.[0].toString();
-                                            const regexTaskID = /showTask\?id=([0-9]{9,10})/;
-                                            if (regexTaskID.test(parentString)) {
-                                                parentID = parentString.match(regexTaskID)[1];
-                                            }
-                                        }
-
-                                        if (!finalchildString1.startsWith("{{pdf:") && !finalchildString1.includes("[Email Body]") && !finalchildString1.startsWith("![](")) {
-                                            if (finalchildString1.includes("{{[[TODO]]}}")) { // must be a new sub-task
-                                                await createTodoistTask(finalchildString1, existingItems[0][0].children[o].children[t].uid, parentID, existingItems[0][0].children[o].uid);
-                                            } else if (previousTasks != undefined && previousTasks != null) { // not a sub-task so check if description
-                                                var descMatch = false;
-                                                for (var n = 0; n < previousTasks.length; n++) {
-                                                    if (finalchildString1 == previousTasks[n].description) {
-                                                        descMatch = true;
-                                                    }
-                                                }
-                                                if (descMatch == false) { // doesn't match the description, must be a new comment                                      
-                                                    var url2 = "https://api.todoist.com/rest/v2/comments";
-                                                    let taskContent2 = JSON.stringify({
-                                                        "task_id": parentID,
-                                                        "content": finalchildString1
-                                                    });
-                                                    var requestOptions2 = {
-                                                        method: 'POST',
-                                                        headers: myHeaders,
-                                                        redirect: 'follow',
-                                                        body: taskContent2
-                                                    };
-
-                                                    const response2 = await fetch(url2, requestOptions2);
-                                                    if (!response2.ok) {
-                                                        alert("Failed to add comment to task in Todoist");
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else if (childID != undefined) { // this is a known sub-task
-                                        for (var p = 0; p < previousTasks.length; p++) {
-                                            if (childID == previousTasks[p].id) {
-                                                if (finalchildString1 != previousTasks[p].content) { // we must have changed the task name 
-                                                    var url4 = "https://api.todoist.com/rest/v2/tasks/" + previousTasks[p].id + "";
-                                                    let taskContent = JSON.stringify({
-                                                        "content": finalchildString1
-                                                    });
-                                                    var requestOptions4 = {
-                                                        method: 'POST',
-                                                        headers: myHeaders,
-                                                        redirect: 'follow',
-                                                        body: taskContent
-                                                    };
-                                                    const response4 = await fetch(url4, requestOptions4);
-                                                    if (!response4.ok) {
-                                                        alert("Failed to update task in Todoist");
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else if (commentID != undefined) { // check for comment renaming here
-                                        for (var u = 0; u < previousComments.length; u++) {
-                                            if (previousComments[u].commentsJSON.length > 0) {
-                                                for (var v = 0; v < previousComments[u].commentsJSON.length; v++) {
-                                                    if (commentID == previousComments[u].commentsJSON[v].id) {
-                                                        if (finalchildString1 != previousComments[u].commentsJSON[v].content) { // we must have changed the comment text
-                                                            var url5 = "https://api.todoist.com/rest/v2/comments/" + commentID + "";
-                                                            let taskContent = JSON.stringify({
-                                                                "content": finalchildString1
-                                                            });
-                                                            var requestOptions5 = {
-                                                                method: 'POST',
-                                                                headers: myHeaders,
-                                                                redirect: 'follow',
-                                                                body: taskContent
-                                                            };
-                                                            const response5 = await fetch(url5, requestOptions5);
-                                                            if (!response5.ok) {
-                                                                alert("Failed to update comment in Todoist");
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            commentString += ` [Link](https://todoist.com/showTask?id=${c.task_id}#comment-${c.id})`;
+                            extras.push({ text: commentString, tID: c.task_id, ID: c.id });
                         }
                     }
+                    return extras;
                 }
-            }
-
-            // delete all childblocks to allow creation of new task list
-            if (existingItems?.[0]?.[0].hasOwnProperty("children")) {
-                for (var i = 0; i < existingItems[0][0].children.length; i++) {
-                    await window.roamAlphaAPI.deleteBlock({ "block": { "uid": existingItems[0][0].children[i].uid } });
+                async function insertChildBlock({ parentUid, order, node }) {
+                    // console.info("[Roam] Inserting child under parent UID:", parentUid, "| text:", (node?.text || "").slice(0, 120) + "...");
+                    return createBlock({ parentUid, order, node });
                 }
-            }
-
-            // now, get up-to-date task list from Todoist
-            var requestOptions = {
-                method: 'GET',
-                headers: myHeaders,
-                redirect: 'follow'
-            };
-            const response = await fetch(url, requestOptions);
-            const myTasks = await response.text();
-            var task;
-
-            let taskList = [];
-            let subTaskList = [];
-            let output = [];
-            let comments = [];
-            let cTasks = [];
-            extensionAPI.settings.set("ttt:tasks", JSON.stringify(JSON.parse(myTasks)));
-            extensionAPI.settings.set("ttt:tasks:time", Date.now());
-
-            for await (task of JSON.parse(myTasks)) {
-                if (task.hasOwnProperty("parent_id") && task.parent_id != null) {
-                    subTaskList.push({ id: task.id, parent_id: task.parent_id, order: task.order, content: task.content, url: task.url, priority: task.priority });
-                } else {
-                    taskList.push({ id: task.id, uid: "temp" });
+                function orderParentChildren(node) {
+                    if (!node?.children || !Array.isArray(node.children) || node.children.length === 0) return node;
+                    const nonTasks = [];
+                    const taskChildren = [];
+                    for (const ch of node.children) (isTaskChildNode(ch) ? taskChildren : nonTasks).push(ch);
+                    const taskTodos = taskChildren.filter(ch => !isDoneLineNode(ch));
+                    const taskDones = taskChildren.filter(ch => isDoneLineNode(ch));
+                    node.children = [...nonTasks, ...taskTodos, ...taskDones];
+                    return node;
                 }
-            }
 
-            if (TodoistCompleted && (DNP || datedDNP)) {
-                const date = new Date();
-                date.setHours(0, 0, 0, 0);
-                let sinceDate = new Date(date.setMinutes(date.getMinutes() + date.getTimezoneOffset()));
-                let year = sinceDate.getFullYear();
-                var dd = String(sinceDate.getDate()).padStart(2, '0');
-                var mm = String(sinceDate.getMonth() + 1).padStart(2, '0');
-                var hr = String(sinceDate.getHours()).padStart(2, '0');
-                var min = String(sinceDate.getMinutes()).padStart(2, '0');
-                const sinceString = "" + year + "-" + mm + "-" + dd + "T" + hr + ":" + min + ":00";
-                urlC = "https://api.todoist.com/sync/v9/completed/get_all?since=" + sinceString + "";
+                // ---------------- Output assembly ----------------
+                const headerChildrenToAdd = []; // items to add under header
+                let childInserts = [];          // items to add under existing parent UIDs
 
-                const responseC = await fetch(urlC, requestOptions);
-                const myTasksC = await responseC.text();
-                cTasks = JSON.parse(myTasksC);
-                if (cTasks.items.length > 0) {
-                    for (var i = 0; i < cTasks.items.length; i++) {
-                        taskList.push({ id: cTasks.items[i].id, uid: "temp" });
+                // (A) NEW ACTIVE PARENTS (and their active subtasks)
+                // console.info("[Plan] Building NEW active parents (and subtasks)...");
+                for (const t of activeParents) {
+                    const id = String(t.id);
+                    const todoKey = `${normalizeForKey(`{{[[TODO]]}} ${t.content}`)}|todo`;
+                    if (existingTaskMap.has(id) || existingHeuristicKeys.has(todoKey)) {
+                        // console.info("[Skip] Active item already represented:", { id, todoKey });
+                        continue;
+                    }
+
+                    const { text: parentText } = buildTodoLine(t);
+                    const node = { text: parentText };
+                    const children = await buildExtras(t);
+
+                    if (TodoistGetSubtasks && activeSubtasksByParent.has(id)) {
+                        // console.info(`[Plan] Parent ${id} has ${activeSubtasksByParent.get(id).length} active subtasks`);
+                        for (const st of activeSubtasksByParent.get(id)) {
+                            const stId = String(st.id);
+                            const stKey = `${normalizeForKey(`{{[[TODO]]}} ${st.content}`)}|todo`;
+                            if (existingTaskMap.has(stId) || existingHeuristicKeys.has(stKey)) {
+                                // console.info("[Skip] Subtask already represented:", { stId, stKey });
+                                continue;
+                            }
+                            const { text: subText } = buildTodoLine(st);
+                            const subNode = { text: subText };
+                            const subExtras = await buildExtras(st);
+                            if (subExtras.length) subNode.children = subExtras;
+                            children.push(subNode);
+                        }
+                    }
+
+                    if (children.length) node.children = children;
+                    headerChildrenToAdd.push(orderParentChildren(node));
+                }
+                // console.info("[Plan] headerChildrenToAdd count (pre-existing-parents):", headerChildrenToAdd.length);
+
+                // (B) ACTIVE SUBTASKS FOR PARENTS THAT ALREADY EXIST IN ROAM
+                // console.info("[Plan] Attaching active subtasks under existing parents in Roam...");
+                if (TodoistGetSubtasks) {
+                    const pendingChildByParent = new Map();
+                    for (const [parentId, subs] of activeSubtasksByParent.entries()) {
+                        if (!parentUidByTaskId.has(parentId)) continue; // parent block isn't present in Roam
+                        const parentUid = parentUidByTaskId.get(parentId);
+                        const newSubs = subs.filter(st => {
+                            const stId = String(st.id);
+                            const stKey = `${normalizeForKey(`{{[[TODO]]}} ${st.content}`)}|todo`;
+                            return !(existingTaskMap.has(stId) || existingHeuristicKeys.has(stKey));
+                        });
+                        if (!newSubs.length) continue;
+                        if (!pendingChildByParent.has(parentUid)) pendingChildByParent.set(parentUid, []);
+                        for (const st of newSubs) {
+                            const { text: subText } = buildTodoLine(st);
+                            const subNode = { text: subText };
+                            const subExtras = await buildExtras(st);
+                            if (subExtras.length) subNode.children = subExtras;
+                            pendingChildByParent.get(parentUid).push({ parentUid, order: 999, node: subNode });
+                        }
+                    }
+                    // Sort per-parent: TODOs before DONEs (active subtasks are TODOs anyway)
+                    for (const [puid, arr] of pendingChildByParent.entries()) {
+                        arr.sort((a, b) => {
+                            const aDone = isDoneLineNode(a.node);
+                            const bDone = isDoneLineNode(b.node);
+                            return (aDone === bDone) ? 0 : (aDone ? 1 : -1);
+                        });
+                        childInserts = childInserts.concat(arr);
                     }
                 }
-                extensionAPI.settings.set("ttt:tasksCompleted", JSON.stringify(JSON.parse(myTasksC)));
-                extensionAPI.settings.set("ttt:tasksCompleted:time", Date.now());
-            } else if (TodoistCompleted && projectID) {
-                if (Array.isArray(projectID)) {
-                    let id = projectID[1].toString();
-                    projectID = id;
-                }
-                urlC = "https://api.todoist.com/sync/v9/completed/get_all?project_id=" + projectID + "";
+                // console.info("[Plan] childInserts (active subtasks) count:", childInserts.length);
 
-                const responseC = await fetch(urlC, requestOptions);
-                const myTasksC = await responseC.text();
-                cTasks = JSON.parse(myTasksC);
-                if (cTasks.items.length > 0) {
-                    for (var i = 0; i < cTasks.items.length; i++) {
-                        taskList.push({ id: cTasks.items[i].id, uid: "temp" });
-                    }
-                }
-            }
+                // (C) COMPLETED (parents + subtasks). Subtasks nest when we can infer parent.
+                if (TodoistCompleted && completedItems.length) {
+                    // console.info("[Plan] Processing completed items for insertion...");
+                    const pendingChildByParent = new Map(); // DONE children under existing parents
+                    const doneHeaderAdds = [];              // DONE items at header level
 
-            if (Object.keys(taskList).length > 0) {
-                for (var i = 0; i < taskList.length; i++) {
-                    for await (task of JSON.parse(myTasks)) {
-                        if (taskList[i].id == task.id) {
-                            // print task
-                            var itemString = "";
-                            itemString += "{{[[TODO]]}} ";
-                            itemString += "" + task.content + "";
-                            if (TodoistPriority == true) {
-                                if (task.priority == "4") {
-                                    var priority = "1";
-                                } else if (task.priority == "3") {
-                                    var priority = "2";
-                                } else if (task.priority == "2") {
-                                    var priority = "3";
-                                } else if (task.priority == "1") {
-                                    var priority = "4";
-                                }
-                                itemString += " #Priority-" + priority + "";
-                            }/*
-                            if (RRTag != undefined) {
-                                itemString += " #[["+RRTag+"]]";
-                            }*/
-                            itemString += " [Link](" + task.url + ")";
+                    for (const it of completedItems) {
+                        const { text: doneText, id } = buildDoneLineFromCompleted(it);
+                        const heuristicKey = `${normalizeForKey(doneText)}|done`;
 
-                            var thisExtras = [];
-                            // print description
-                            if (TodoistGetDescription == true && task.description) {
-                                thisExtras.push({ "text": task.description.toString(), });
-                            }
+                        if (existingTaskMap.has(id) || existingHeuristicKeys.has(heuristicKey)) {
+                            // console.info("[Skip] Completed item already represented:", { id, heuristicKey });
+                            continue;
+                        }
 
-                            // print comments
-                            if (TodoistGetComments == true && task.comment_count > 0) {
-                                var url = "https://api.todoist.com/rest/v2/comments?task_id=" + task.id + "";
-                                const response = await fetch(url, requestOptions);
-                                const myComments = await response.text();
-                                let commentsJSON = await JSON.parse(myComments);
+                        const parentId = prevById.get(id)?.parent_id != null ? String(prevById.get(id).parent_id) : null;
 
-                                var commentString = "";
-                                for (var j = 0; j < commentsJSON.length; j++) {
-                                    commentString = "";
-                                    if (commentsJSON[j].attachment != null && TodoistAccount == "Premium") {
-                                        if (commentsJSON[j].attachment.file_type == "application/pdf") {
-                                            commentString = "{{pdf: " + commentsJSON[j].attachment.file_url + "}}";
-                                        } else if (commentsJSON[j].attachment.file_type == "image/jpeg" || commentsJSON[j].attachment.file_type == "image/png") {
-                                            commentString = "![](" + commentsJSON[j].attachment.file_url + ")";
-                                        } else {
-                                            commentString = "" + commentsJSON[j].content + "";
-                                            commentString += " [Link](https://todoist.com/showTask?id=" + commentsJSON[j].task_id + "#comment-" + commentsJSON[j].id + ")";
-                                        }
-                                    } else if (commentsJSON[j].attachment != null) {
-                                        if (commentsJSON[j].attachment.file_type == "text/html") {
-                                            commentString = "" + commentsJSON[j].content + " [Email Body](" + commentsJSON[j].attachment.file_url + ")";
-                                        }
-                                    } else {
-                                        commentString = "" + commentsJSON[j].content + "";
-                                        commentString += " [Link](https://todoist.com/showTask?id=" + commentsJSON[j].task_id + "#comment-" + commentsJSON[j].id + ")";
-                                    }
-
-                                    if (commentString.length > 0) {
-                                        thisExtras.push({ "text": commentString.toString(), "tID": commentsJSON[j].task_id, "ID": commentsJSON[j].id });
-                                    }
-                                }
-                                comments.push({ "task": task.id, "commentsJSON": commentsJSON })
-                            }
-
-                            // print subtasks
-                            if (TodoistGetSubtasks == true && subTaskList.length > 0) {
-                                for (var k = 0; k < subTaskList.length; k++) {
-                                    if (subTaskList[k].parent_id == task.id) {
-                                        var subitemString = "";
-                                        subitemString += "{{[[TODO]]}} ";
-                                        subitemString += "" + subTaskList[k].content + "";
-                                        if (TodoistPriority == true) {
-                                            if (task.priority == "4") {
-                                                var priority = "1";
-                                            } else if (task.priority == "3") {
-                                                var priority = "2";
-                                            } else if (task.priority == "2") {
-                                                var priority = "3";
-                                            } else if (task.priority == "1") {
-                                                var priority = "4";
-                                            }
-                                            subitemString += " #Priority-" + subTaskList[k].priority + "";
-                                        }
-                                        subitemString += " [Link](" + subTaskList[k].url + ")";
-                                        thisExtras.push({ "text": subitemString.toString(), });
-                                        var index = subTaskList.indexOf(subTaskList[k]);
-                                        if (index !== -1) {
-                                            subTaskList.splice(index, 1);
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (thisExtras.length > 0) { // finally, create the string to return
-                                output.push({ "text": itemString.toString(), "children": thisExtras });
+                        if (parentId && parentUidByTaskId.has(parentId)) {
+                            const parentUid = parentUidByTaskId.get(parentId);
+                            if (!pendingChildByParent.has(parentUid)) pendingChildByParent.set(parentUid, []);
+                            pendingChildByParent.get(parentUid).push({ parentUid, order: 999, node: { text: doneText } });
+                        } else {
+                            // Maybe the parent is being added in this run
+                            const maybeParent = headerChildrenToAdd.find(n =>
+                                (n.text || "").includes(`/app/task/${parentId}`) || (n.text || "").includes(`showTask?id=${parentId}`)
+                            );
+                            if (parentId && maybeParent) {
+                                if (!maybeParent.children) maybeParent.children = [];
+                                maybeParent.children.push({ text: doneText });
+                                orderParentChildren(maybeParent);
                             } else {
-                                output.push({ "text": itemString.toString(), });
+                                doneHeaderAdds.push({ text: doneText });
                             }
                         }
                     }
+
+                    // Merge completed child inserts (ensure DONEs go after TODOs)
+                    for (const [puid, arr] of pendingChildByParent.entries()) {
+                        arr.sort((a, b) => {
+                            const aDone = isDoneLineNode(a.node);
+                            const bDone = isDoneLineNode(b.node);
+                            return (aDone === bDone) ? 0 : (aDone ? 1 : -1);
+                        });
+                        childInserts = childInserts.concat(arr);
+                    }
+
+                    // Add DONE header-level items to headerChildrenToAdd
+                    for (const dn of doneHeaderAdds) headerChildrenToAdd.push(dn);
                 }
 
-                if (subTaskList != null && subTaskList.length > 0) {
-                    for (var l = 0; l < subTaskList.length; l++) {
-                        var itemString = "";
-                        itemString += "{{[[TODO]]}} ";
-                        itemString += "" + subTaskList[l].content + "";
-                        if (TodoistPriority == true) {
-                            if (task.priority == "4") {
-                                var priority = "1";
-                            } else if (task.priority == "3") {
-                                var priority = "2";
-                            } else if (task.priority == "2") {
-                                var priority = "3";
-                            } else if (task.priority == "1") {
-                                var priority = "4";
-                            }
-                            itemString += " #Priority-" + subTaskList[l].priority + "";
-                        }
-                        itemString += " [Link](" + subTaskList[l].url + ")";
-                        output.push({ "text": itemString.toString(), });
-                    }
-                }
-                if (TodoistCompleted && cTasks.items.length > 0) {
-                    for (var j = 0; j < cTasks.items.length; j++) {
-                        // print task
-                        var itemString = "{{[[DONE]]}} ";
-                        if (completedStrikethrough) {
-                            itemString += "~~";
-                        }
-                        itemString += cTasks.items[j].content + " [Link](https://todoist.com/showTask?id=" + cTasks.items[j].task_id + ")";
-                        if (completedStrikethrough) {
-                            itemString += "~~";
-                        }
-                        output.push({ "text": itemString.toString(), });
-                    }
-                }
+                // --- Reorder header items (new insert plan): TODOs top, DONEs bottom ---
+                const headerTodos = headerChildrenToAdd.filter(n => !isDoneLineNode(n));
+                const headerDones = headerChildrenToAdd.filter(n => isDoneLineNode(n));
+                const orderedHeaderChildren = [...headerTodos, ...headerDones];
+                // console.info("[Plan] Header to insert — TODOs:", headerTodos.length, "DONEs:", headerDones.length);
 
+                // ---------------- Save comment cache timestamp ----------------
                 if (extensionAPI.settings.get("ttt:comments")) {
                     extensionAPI.settings.set("ttt:comments-lastsync", extensionAPI.settings.get("ttt:comments"));
                 }
-                extensionAPI.settings.set("ttt:comments", JSON.stringify(comments));
                 extensionAPI.settings.set("ttt:comments:time", Date.now());
 
+                // ---------------- Output / Write ----------------
                 if (SB) {
-                    var header = [];
-                    header.push({ "text": TodoistHeader.toString(), "children": output });
-                    return header;
-                } else if (!auto) {
-                    return output;
-                } else {
-                    parentUid = autoBlockUid;
-                    output.forEach((node, order) => {
-                        createBlock({
-                            parentUid,
-                            order,
-                            node
-                        })
-                    }
-                    )
+                    // console.info("[Return] SB mode: returning header + children (TODOs first).");
+                    return [{ text: TodoistHeader.toString(), children: orderedHeaderChildren }];
                 }
-            } else {
                 if (!auto) {
-                    alert("No items to import");
+                    // console.info("[Return] Non-auto mode: returning children to add under header (TODOs first).");
+                    return orderedHeaderChildren;
                 }
+
+                // AUTO mode: force new TODOs to TOP and DONEs to BOTTOM on insert
+                // console.info("[Roam] AUTO mode: Insert new TODOs at TOP, DONEs at BOTTOM...");
+                const newTodos = orderedHeaderChildren.filter(n => !isDoneLineNode(n));
+                const newDones = orderedHeaderChildren.filter(n => isDoneLineNode(n));
+
+                // Insert TODOs at TOP (reverse to preserve their relative order at the top)
+                for (let i = newTodos.length - 1; i >= 0; i--) {
+                    const n = newTodos[i];
+                    // console.info(`[Roam] Inserting TODO at TOP:`, (n?.text || "").slice(0, 140) + "...");
+                    await createBlock({ parentUid: autoBlockUid, order: 0, node: n });
+                }
+                // Insert DONEs at BOTTOM
+                for (let i = 0; i < newDones.length; i++) {
+                    const n = newDones[i];
+                    // console.info(`[Roam] Inserting DONE at BOTTOM:`, (n?.text || "").slice(0, 140) + "...");
+                    await createBlock({ parentUid: autoBlockUid, order: 999999, node: n });
+                }
+
+                // Append children under existing parents
+                // console.info("[Roam] AUTO mode: Appending children under existing parents...");
+                for (let i = 0; i < childInserts.length; i++) {
+                    const ins = childInserts[i];
+                    // console.info(`[Roam] Inserting child ${i + 1}/${childInserts.length} under UID ${ins.parentUid}:`, (ins.node?.text || "").slice(0, 140) + "...");
+                    await insertChildBlock(ins);
+                }
+
+                // --- Final reordering of header children (TODOs first, DONEs last) ---
+                try {
+                    const headerQuery = await window.roamAlphaAPI.q(
+                        `[:find (pull ?p [:block/uid {:block/children [:block/uid :block/string :block/order]}])
+      :where [?p :block/uid "${autoBlockUid}"]]`
+                    );
+                    const headerNode2 = headerQuery?.[0]?.[0];
+                    if (headerNode2?.children?.length) {
+                        const children = headerNode2.children.map(c => ({
+                            uid: c.uid,
+                            text: c.string || ""
+                        }));
+
+                        const todos = children.filter(c => c.text.includes("{{[[TODO]]}}"));
+                        const dones = children.filter(c => c.text.includes("{{[[DONE]]}}"));
+
+                        // Safeguard: only reorder if we have at least one TODO and one DONE
+                        if (todos.length > 0 && dones.length > 0) {
+                            const reordered = [...todos, ...dones];
+
+                            // If already in desired order, skip moving
+                            const currentOrder = children.map(c => c.uid).join("|");
+                            const desiredOrder = reordered.map(c => c.uid).join("|");
+                            if (currentOrder !== desiredOrder) {
+                                for (let i = 0; i < reordered.length; i++) {
+                                    await window.roamAlphaAPI.moveBlock({
+                                        location: { 'parent-uid': autoBlockUid, order: i },
+                                        block: { uid: reordered[i].uid }
+                                    });
+                                }
+                                // console.info("[Reorder] Completed via moveBlock: TODOs top, DONEs bottom.");
+                            } else {
+                                // console.info("[Reorder] Skipped: already in desired order.");
+                            }
+                        } else {
+                            // console.info("[Reorder] Skipped: not enough variety (need both TODO and DONE).");
+                        }
+                    }
+                } catch (err) {
+                    console.error("[Reorder] Failed (moveBlock):", err);
+                }
+
+                // console.info("[Done] importTasks completed.");
+            } catch (err) {
+                console.error("importTasks ERROR:", err);
+            } finally {
+                isImportRunning = false;
             }
         }
+
     },
     onunload: () => {
         window.roamAlphaAPI.ui.blockContextMenu.removeCommand({
