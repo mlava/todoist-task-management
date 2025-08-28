@@ -1287,13 +1287,11 @@ export default {
             completedStrikethrough,
         ) {
             if (isImportRunning) {
-                // console.info("importTasks: Already running. Skipping this run.");
                 return;
             }
             isImportRunning = true;
 
             try {
-                // ---------------- URL selection for ACTIVE tasks ----------------
                 const dateRegex = /^\d{2}-\d{2}-\d{4}$/;
                 let datedDNP = false;
                 let todoistDate = null;
@@ -1324,10 +1322,7 @@ export default {
                             : "https://api.todoist.com/rest/v2/tasks?filter=Today";
                     }
                 }
-
-                // console.info("[Todoist] Active tasks URL:", url);
-
-                // ---------------- Load caches (for parent lookup on completed subtasks) ----------------
+                
                 let previousTasks = [];
                 if (extensionAPI.settings.get("ttt:tasks")) {
                     previousTasks = JSON.parse(extensionAPI.settings.get("ttt:tasks"));
@@ -1346,27 +1341,22 @@ export default {
                         prevById.set(String(t.id), { parent_id: t.parent_id || null, content: t.content || "" });
                     }
                 }
-                // console.info("[Cache] previousTasks size:", previousTasks?.length || 0);
-
-                // ---------------- Scan existing header subtree (dedupe + parent UIDs) ----------------
+                
                 const existingQuery = await window.roamAlphaAPI.q(
                     `[:find (pull ?p [:node/title :block/string :block/uid {:block/children ...}]) :where [?p :block/uid "${autoBlockUid}"]]`
                 );
                 const headerNode = existingQuery?.[0]?.[0] || null;
-                // console.info("[Roam] Header node found:", !!headerNode);
-
-                // Accept both numeric and string Todoist IDs in URLs
+                
                 const TASK_URL_ANY_ID = /todoist\.com\/(?:app\/task\/|showTask\?id=)([A-Za-z0-9_-]{6,}|\d{9,20})/;
                 const COMMENT_ID_RE = /#comment-([0-9]{9,10})/;
 
-                const existingTaskMap = new Map();   // id -> { uid, done } (REAL task lines only)
-                const parentUidByTaskId = new Map(); // id -> uid of the REAL parent task block
+                const existingTaskMap = new Map();
+                const parentUidByTaskId = new Map();
                 const existingCommentIds = new Set();
-                const existingHeuristicKeys = new Set(); // content+state fallback dedupe
+                const existingHeuristicKeys = new Set();
 
                 function normalizeForKey(s) {
                     if (!s) return "";
-                    // strip DONE/TODO markup, strikethrough, priority, and link
                     let x = s.replace(/{{\[\[(TODO|DONE)\]\]}}\s*/g, "")
                         .replace(/~~/g, "")
                         .replace(/\s#Priority-\d\b/g, "")
@@ -1386,53 +1376,40 @@ export default {
                     const s = block.string || "";
                     const state = lineState(s);
                     const isTaskLine = state === "todo" || state === "done";
-
-                    // Heuristic key for content+state dedupe
+                    
                     if (isTaskLine) {
                         const key = `${normalizeForKey(s)}|${state}`;
                         if (key.length > 1) existingHeuristicKeys.add(key);
                     }
-
-                    // Extract Todoist task id from URL (works for both URL formats)
+                    
                     const m = s.match(TASK_URL_ANY_ID);
                     const id = m ? m[1] : null;
-
-                    // Only map REAL task lines (avoid comment lines) for parent/known tasks
+                    
                     if (id && isTaskLine) {
                         existingTaskMap.set(id, { uid: block.uid, done: state === "done" });
                         if (!parentUidByTaskId.has(id)) parentUidByTaskId.set(id, block.uid);
                     }
-
-                    // Track existing comments to avoid duplicates
+                    
                     const cm = s.match(COMMENT_ID_RE);
                     if (cm) existingCommentIds.add(cm[1]);
 
                     if (Array.isArray(block.children)) block.children.forEach(walk);
                 }
                 if (headerNode?.children) headerNode.children.forEach(walk);
-
-                // console.info("[Roam] existingTaskMap size:", existingTaskMap.size);
-                // console.info("[Roam] parentUidByTaskId size:", parentUidByTaskId.size);
-                // console.info("[Roam] existingCommentIds size:", existingCommentIds.size);
-                // console.info("[Roam] existingHeuristicKeys size:", existingHeuristicKeys.size);
-
-                // ---------------- HTTP setup ----------------
+                
                 const myHeaders = new Headers();
                 myHeaders.append("Authorization", "Bearer " + myToken);
                 myHeaders.append("Content-Type", "application/json");
                 const requestOptions = { method: "GET", headers: myHeaders, redirect: "follow" };
-
-                // ---------------- Fetch ACTIVE tasks ----------------
+                
                 const resp = await fetch(url, requestOptions);
                 const activeTasks = await resp.json();
-                // console.info("[Todoist] Active tasks count:", Array.isArray(activeTasks) ? activeTasks.length : 0);
 
                 extensionAPI.settings.set("ttt:tasks", JSON.stringify(activeTasks));
                 extensionAPI.settings.set("ttt:tasks:time", Date.now());
-
-                // Split parents/subtasks among ACTIVE
+                
                 const activeParents = [];
-                const activeSubtasksByParent = new Map(); // parentId(str) -> array of subtasks
+                const activeSubtasksByParent = new Map();
                 for (const t of activeTasks || []) {
                     if (t?.parent_id) {
                         const pid = String(t.parent_id);
@@ -1442,19 +1419,15 @@ export default {
                         activeParents.push(t);
                     }
                 }
-                // console.info("[Active] Parents:", activeParents.length);
-                // console.info("[Active] Parents-with-subtasks map size:", activeSubtasksByParent.size);
-
-                // ---------------- Fetch COMPLETED items (by completion date, local day) ----------------
+                
                 let completedItems = [];
                 if (TodoistCompleted && (DNP || datedDNP || projectID)) {
-                    // local midnight today and tomorrow
                     function startOfDayLocal(d = new Date()) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
                     function fmtLocalMidnight(d) {
                         const yyyy = d.getFullYear();
                         const mm = String(d.getMonth() + 1).padStart(2, '0');
                         const dd = String(d.getDate()).padStart(2, '0');
-                        return `${yyyy}-${mm}-${dd}T00:00:00`; // local midnight, no 'Z'
+                        return `${yyyy}-${mm}-${dd}T00:00:00`;
                     }
                     const todayStart = startOfDayLocal();
                     const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
@@ -1462,17 +1435,14 @@ export default {
                     const untilLocal = fmtLocalMidnight(tomorrowStart);
 
                     urlC = `https://api.todoist.com/api/v1/tasks/completed/by_completion_date?since=${encodeURIComponent(sinceLocal)}&until=${encodeURIComponent(untilLocal)}`;
-                    // console.info("[Todoist] Completed URL:", urlC);
 
                     const cResp = await fetch(urlC, requestOptions);
                     const completedJSON = await cResp.json();
                     completedItems = completedJSON?.items || [];
                     extensionAPI.settings.set("ttt:tasksCompleted", JSON.stringify(completedJSON));
                     extensionAPI.settings.set("ttt:tasksCompleted:time", Date.now());
-                    // console.info("[Todoist] Completed items count:", completedItems.length);
                 }
-
-                // ---------------- Helpers (strings/builders) ----------------
+                
                 const isDoneLineNode = (n) => (n?.text || "").includes("{{[[DONE]]}}");
                 const isTaskChildNode = (n) => {
                     const s = (n?.text || "");
@@ -1495,7 +1465,7 @@ export default {
                     return { text: str, id };
                 }
                 function buildDoneLineFromCompleted(it) {
-                    const id = String(it.id); // v1 completed endpoint uses string IDs
+                    const id = String(it.id);
                     const link = canonicalLinkForId(id);
                     let txt = "{{[[DONE]]}} ";
                     if (completedStrikethrough) txt += "~~";
@@ -1508,7 +1478,6 @@ export default {
                     const r = await fetch(url, requestOptions);
                     if (!r.ok) return [];
                     const json = await r.json();
-                    // console.info(`[Todoist] Comments for task ${taskId}:`, json.length);
                     return json;
                 }
                 async function buildExtras(task) {
@@ -1533,7 +1502,6 @@ export default {
                     return extras;
                 }
                 async function insertChildBlock({ parentUid, order, node }) {
-                    // console.info("[Roam] Inserting child under parent UID:", parentUid, "| text:", (node?.text || "").slice(0, 120) + "...");
                     return createBlock({ parentUid, order, node });
                 }
                 function orderParentChildren(node) {
@@ -1546,18 +1514,14 @@ export default {
                     node.children = [...nonTasks, ...taskTodos, ...taskDones];
                     return node;
                 }
-
-                // ---------------- Output assembly ----------------
-                const headerChildrenToAdd = []; // items to add under header
-                let childInserts = [];          // items to add under existing parent UIDs
-
-                // (A) NEW ACTIVE PARENTS (and their active subtasks)
-                // console.info("[Plan] Building NEW active parents (and subtasks)...");
+                
+                const headerChildrenToAdd = [];
+                let childInserts = [];
+                
                 for (const t of activeParents) {
                     const id = String(t.id);
                     const todoKey = `${normalizeForKey(`{{[[TODO]]}} ${t.content}`)}|todo`;
                     if (existingTaskMap.has(id) || existingHeuristicKeys.has(todoKey)) {
-                        // console.info("[Skip] Active item already represented:", { id, todoKey });
                         continue;
                     }
 
@@ -1566,12 +1530,10 @@ export default {
                     const children = await buildExtras(t);
 
                     if (TodoistGetSubtasks && activeSubtasksByParent.has(id)) {
-                        // console.info(`[Plan] Parent ${id} has ${activeSubtasksByParent.get(id).length} active subtasks`);
                         for (const st of activeSubtasksByParent.get(id)) {
                             const stId = String(st.id);
                             const stKey = `${normalizeForKey(`{{[[TODO]]}} ${st.content}`)}|todo`;
                             if (existingTaskMap.has(stId) || existingHeuristicKeys.has(stKey)) {
-                                // console.info("[Skip] Subtask already represented:", { stId, stKey });
                                 continue;
                             }
                             const { text: subText } = buildTodoLine(st);
@@ -1585,14 +1547,11 @@ export default {
                     if (children.length) node.children = children;
                     headerChildrenToAdd.push(orderParentChildren(node));
                 }
-                // console.info("[Plan] headerChildrenToAdd count (pre-existing-parents):", headerChildrenToAdd.length);
-
-                // (B) ACTIVE SUBTASKS FOR PARENTS THAT ALREADY EXIST IN ROAM
-                // console.info("[Plan] Attaching active subtasks under existing parents in Roam...");
+                
                 if (TodoistGetSubtasks) {
                     const pendingChildByParent = new Map();
                     for (const [parentId, subs] of activeSubtasksByParent.entries()) {
-                        if (!parentUidByTaskId.has(parentId)) continue; // parent block isn't present in Roam
+                        if (!parentUidByTaskId.has(parentId)) continue;
                         const parentUid = parentUidByTaskId.get(parentId);
                         const newSubs = subs.filter(st => {
                             const stId = String(st.id);
@@ -1609,7 +1568,7 @@ export default {
                             pendingChildByParent.get(parentUid).push({ parentUid, order: 999, node: subNode });
                         }
                     }
-                    // Sort per-parent: TODOs before DONEs (active subtasks are TODOs anyway)
+                    
                     for (const [puid, arr] of pendingChildByParent.entries()) {
                         arr.sort((a, b) => {
                             const aDone = isDoneLineNode(a.node);
@@ -1619,20 +1578,16 @@ export default {
                         childInserts = childInserts.concat(arr);
                     }
                 }
-                // console.info("[Plan] childInserts (active subtasks) count:", childInserts.length);
-
-                // (C) COMPLETED (parents + subtasks). Subtasks nest when we can infer parent.
+                
                 if (TodoistCompleted && completedItems.length) {
-                    // console.info("[Plan] Processing completed items for insertion...");
-                    const pendingChildByParent = new Map(); // DONE children under existing parents
-                    const doneHeaderAdds = [];              // DONE items at header level
+                    const pendingChildByParent = new Map();
+                    const doneHeaderAdds = [];
 
                     for (const it of completedItems) {
                         const { text: doneText, id } = buildDoneLineFromCompleted(it);
                         const heuristicKey = `${normalizeForKey(doneText)}|done`;
 
                         if (existingTaskMap.has(id) || existingHeuristicKeys.has(heuristicKey)) {
-                            // console.info("[Skip] Completed item already represented:", { id, heuristicKey });
                             continue;
                         }
 
@@ -1643,7 +1598,6 @@ export default {
                             if (!pendingChildByParent.has(parentUid)) pendingChildByParent.set(parentUid, []);
                             pendingChildByParent.get(parentUid).push({ parentUid, order: 999, node: { text: doneText } });
                         } else {
-                            // Maybe the parent is being added in this run
                             const maybeParent = headerChildrenToAdd.find(n =>
                                 (n.text || "").includes(`/app/task/${parentId}`) || (n.text || "").includes(`showTask?id=${parentId}`)
                             );
@@ -1656,8 +1610,7 @@ export default {
                             }
                         }
                     }
-
-                    // Merge completed child inserts (ensure DONEs go after TODOs)
+                    
                     for (const [puid, arr] of pendingChildByParent.entries()) {
                         arr.sort((a, b) => {
                             const aDone = isDoneLineNode(a.node);
@@ -1666,60 +1619,44 @@ export default {
                         });
                         childInserts = childInserts.concat(arr);
                     }
-
-                    // Add DONE header-level items to headerChildrenToAdd
+                    
                     for (const dn of doneHeaderAdds) headerChildrenToAdd.push(dn);
                 }
-
-                // --- Reorder header items (new insert plan): TODOs top, DONEs bottom ---
+                
                 const headerTodos = headerChildrenToAdd.filter(n => !isDoneLineNode(n));
                 const headerDones = headerChildrenToAdd.filter(n => isDoneLineNode(n));
                 const orderedHeaderChildren = [...headerTodos, ...headerDones];
-                // console.info("[Plan] Header to insert — TODOs:", headerTodos.length, "DONEs:", headerDones.length);
-
-                // ---------------- Save comment cache timestamp ----------------
+                
                 if (extensionAPI.settings.get("ttt:comments")) {
                     extensionAPI.settings.set("ttt:comments-lastsync", extensionAPI.settings.get("ttt:comments"));
                 }
                 extensionAPI.settings.set("ttt:comments:time", Date.now());
-
-                // ---------------- Output / Write ----------------
+                
                 if (SB) {
-                    // console.info("[Return] SB mode: returning header + children (TODOs first).");
                     return [{ text: TodoistHeader.toString(), children: orderedHeaderChildren }];
                 }
                 if (!auto) {
-                    // console.info("[Return] Non-auto mode: returning children to add under header (TODOs first).");
                     return orderedHeaderChildren;
                 }
-
-                // AUTO mode: force new TODOs to TOP and DONEs to BOTTOM on insert
-                // console.info("[Roam] AUTO mode: Insert new TODOs at TOP, DONEs at BOTTOM...");
+                
                 const newTodos = orderedHeaderChildren.filter(n => !isDoneLineNode(n));
                 const newDones = orderedHeaderChildren.filter(n => isDoneLineNode(n));
 
-                // Insert TODOs at TOP (reverse to preserve their relative order at the top)
                 for (let i = newTodos.length - 1; i >= 0; i--) {
                     const n = newTodos[i];
-                    // console.info(`[Roam] Inserting TODO at TOP:`, (n?.text || "").slice(0, 140) + "...");
                     await createBlock({ parentUid: autoBlockUid, order: 0, node: n });
                 }
-                // Insert DONEs at BOTTOM
+                
                 for (let i = 0; i < newDones.length; i++) {
                     const n = newDones[i];
-                    // console.info(`[Roam] Inserting DONE at BOTTOM:`, (n?.text || "").slice(0, 140) + "...");
                     await createBlock({ parentUid: autoBlockUid, order: 999999, node: n });
                 }
-
-                // Append children under existing parents
-                // console.info("[Roam] AUTO mode: Appending children under existing parents...");
+                
                 for (let i = 0; i < childInserts.length; i++) {
                     const ins = childInserts[i];
-                    // console.info(`[Roam] Inserting child ${i + 1}/${childInserts.length} under UID ${ins.parentUid}:`, (ins.node?.text || "").slice(0, 140) + "...");
                     await insertChildBlock(ins);
                 }
-
-                // --- Final reordering of header children (TODOs first, DONEs last) ---
+                
                 try {
                     const headerQuery = await window.roamAlphaAPI.q(
                         `[:find (pull ?p [:block/uid {:block/children [:block/uid :block/string :block/order]}])
@@ -1734,12 +1671,9 @@ export default {
 
                         const todos = children.filter(c => c.text.includes("{{[[TODO]]}}"));
                         const dones = children.filter(c => c.text.includes("{{[[DONE]]}}"));
-
-                        // Safeguard: only reorder if we have at least one TODO and one DONE
+                        
                         if (todos.length > 0 && dones.length > 0) {
                             const reordered = [...todos, ...dones];
-
-                            // If already in desired order, skip moving
                             const currentOrder = children.map(c => c.uid).join("|");
                             const desiredOrder = reordered.map(c => c.uid).join("|");
                             if (currentOrder !== desiredOrder) {
@@ -1749,7 +1683,6 @@ export default {
                                         block: { uid: reordered[i].uid }
                                     });
                                 }
-                                // console.info("[Reorder] Completed via moveBlock: TODOs top, DONEs bottom.");
                             } else {
                                 // console.info("[Reorder] Skipped: already in desired order.");
                             }
@@ -1760,8 +1693,7 @@ export default {
                 } catch (err) {
                     console.error("[Reorder] Failed (moveBlock):", err);
                 }
-
-                // console.info("[Done] importTasks completed.");
+                
             } catch (err) {
                 console.error("importTasks ERROR:", err);
             } finally {
