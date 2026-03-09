@@ -1,14 +1,13 @@
 import iziToast from "izitoast";
 let keyEventHandler = undefined;
+let smartblocksLoadedHandler = undefined;
 var observer, targetNode1, targetNode2, obsConfig = undefined;
 let parentUid = undefined;
-var TodoistHeader, key, TodoistOverdue, TodoistCompleted, autoParentUid, autoBlockUid, existingItems, TodoistAccount, TodoistPriority, TodoistGetDescription, TodoistGetComments, TodoistGetSubtasks;
+var TodoistHeader, key, TodoistOverdue, TodoistCompleted, autoParentUid, autoBlockUid, TodoistPriority, TodoistGetDescription, TodoistGetComments, TodoistGetSubtasks;
 var checkTDInterval = 0;
 var checkEveryMinutes = 15;
 var auto = false;
 var completedStrikethrough;
-var RRTag = undefined;
-var advancedChildManagement = false;
 var isImportRunning = false;
 
 // copied and adapted from https://github.com/dvargas92495/roamjs-components/blob/main/src/writes/createBlock.ts
@@ -82,6 +81,11 @@ const prompt = ({
 }) =>
     new Promise((resolve) => {
         const app = document.getElementById("app");
+        const existing = document.getElementById('todoist-prompt-root');
+        if (existing) {
+            window.ReactDOM.unmountComponentAtNode(existing);
+            existing.remove();
+        }
         const parent = document.createElement("div");
         parent.id = 'todoist-prompt-root';
         app.parentElement.appendChild(parent);
@@ -104,345 +108,166 @@ const prompt = ({
 
 export default {
     onload: ({ extensionAPI }) => {
-        const config = {
-            tabTitle: "Todoist Task Management",
-            settings: [
-                {
-                    id: "ttt-token",
-                    name: "Todoist API Token",
-                    description: "Your API token from https://todoist.com/app/settings/integrations",
-                    action: { type: "input", placeholder: "Add Todoist API token here" },
-                },
-                {
-                    id: "ttt-import-header",
-                    name: "Roam Research Header",
-                    description: "Text Header for Roam Research on import",
-                    action: { type: "input", placeholder: "Imported Tasks" },
-                },
-                {
-                    id: "ttt-account",
-                    name: "Account type",
-                    description: "Account type - turn on if subscribed to Todoist Premium",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-overdue",
-                    name: "Include Overdue",
-                    description: "Include tasks that are overdue in Today's tasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-intermediate",
-                    name: "Show Intermediate options",
-                    description: "Show more configuration options",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setConfig(evt, 1); }
-                    },
-                },
-                {
-                    id: "ttt-advanced",
-                    name: "Show Advanced options (beta)",
-                    description: "Show advanced configuration options",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setConfig(evt, 2); }
-                    },
-                }
-            ]
-        };
-        const config1 = {
-            tabTitle: "Todoist Task Management",
-            settings: [
-                {
-                    id: "ttt-token",
-                    name: "Todoist API Token",
-                    description: "Your API token from https://todoist.com/app/settings/integrations",
-                    action: { type: "input", placeholder: "Add Todoist API token here" },
-                },
-                {
-                    id: "ttt-import-header",
-                    name: "Roam Research Header",
-                    description: "Text Header for Roam Research on import",
-                    action: { type: "input", placeholder: "Imported Tasks" },
-                },
-                {
-                    id: "ttt-account",
-                    name: "Account type",
-                    description: "Account type - turn on if subscribed to Todoist Premium",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-overdue",
-                    name: "Include Overdue",
-                    description: "Include tasks that are overdue in Today's tasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-intermediate",
-                    name: "Show Intermediate options",
-                    description: "Show more configuration options",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setConfig(evt, 1); }
-                    },
-                },
-                {
-                    id: "ttt-auto",
-                    name: "Automatic Download",
-                    description: "Import items to the DNP automatically",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setAuto(evt, 1); }
-                    },
-                },
-                {
-                    id: "ttt-auto-time",
-                    name: "Automatic Download interval",
-                    description: "Frequency in minutes to check for new items",
-                    action: {
-                        type: "input", placeholder: "15",
-                        onChange: (evt) => { setAuto(evt, 2); }
-                    },
-                },
-                {
-                    id: "ttt-completed",
-                    name: "Include Completed",
-                    description: "Include completed tasks in Today's tasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-completedStrikethrough",
-                    name: "Strikethrough Completed Tasks",
-                    description: "Strikethrough task content upon completion",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-description",
-                    name: "Description",
-                    description: "Import item description",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-subtasks",
-                    name: "Subtasks",
-                    description: "Import item subtasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-comments",
-                    name: "Comments",
-                    description: "Import item comments",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-priority",
-                    name: "Priority",
-                    description: "Import item priority",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-createLink",
-                    name: "Link in Created Task",
-                    description: "Create a link to the Roam block in newly created Todoist tasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-advanced",
-                    name: "Show Advanced options (beta)",
-                    description: "Show advanced configuration options",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setConfig(evt, 2); }
-                    },
-                }
-            ]
-        };
-        const config2 = {
-            tabTitle: "Todoist Task Management",
-            settings: [
-                {
-                    id: "ttt-token",
-                    name: "Todoist API Token",
-                    description: "Your API token from https://todoist.com/app/settings/integrations",
-                    action: { type: "input", placeholder: "Add Todoist API token here" },
-                },
-                {
-                    id: "ttt-import-header",
-                    name: "Roam Research Header",
-                    description: "Text Header for Roam Research on import",
-                    action: { type: "input", placeholder: "Imported Tasks" },
-                },
-                {
-                    id: "ttt-account",
-                    name: "Account type",
-                    description: "Account type - turn on if subscribed to Todoist Premium",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-overdue",
-                    name: "Include Overdue",
-                    description: "Include tasks that are overdue in Today's tasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-intermediate",
-                    name: "Show Intermediate options",
-                    description: "Show more configuration options",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setConfig(evt, 1); }
-                    },
-                },
-                {
-                    id: "ttt-auto",
-                    name: "Automatic Download",
-                    description: "Import items to the DNP automatically",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setAuto(evt, 1); }
-                    },
-                },
-                {
-                    id: "ttt-auto-time",
-                    name: "Automatic Download interval",
-                    description: "Frequency in minutes to check for new items",
-                    action: {
-                        type: "input", placeholder: "15",
-                        onChange: (evt) => { setAuto(evt, 2); }
-                    },
-                },
-                {
-                    id: "ttt-completed",
-                    name: "Include Completed",
-                    description: "Include completed tasks in Today's tasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-completedStrikethrough",
-                    name: "Strikethrough Completed Tasks",
-                    description: "Strikethrough task content upon completion",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-description",
-                    name: "Description",
-                    description: "Import item description",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-subtasks",
-                    name: "Subtasks",
-                    description: "Import item subtasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-comments",
-                    name: "Comments",
-                    description: "Import item comments",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-priority",
-                    name: "Priority",
-                    description: "Import item priority",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-createLink",
-                    name: "Link in Created Task",
-                    description: "Create a link to the Roam block in newly created Todoist tasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-advanced",
-                    name: "Show Advanced options (beta)",
-                    description: "Show advanced configuration options",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setConfig(evt, 2); }
-                    },
-                },
-                {
-                    id: "ttt-advChildFeat",
-                    name: "Advanced Sync features (beta)",
-                    description: "Turn on to automatically create tasks, subtasks and comments from within Roam Research",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setAdvFeat(evt); }
-                    },
-                },
-            ]
-        };
-        const config3 = {
-            tabTitle: "Todoist Task Management",
-            settings: [
-                {
-                    id: "ttt-token",
-                    name: "Todoist API Token",
-                    description: "Your API token from https://todoist.com/app/settings/integrations",
-                    action: { type: "input", placeholder: "Add Todoist API token here" },
-                },
-                {
-                    id: "ttt-import-header",
-                    name: "Roam Research Header",
-                    description: "Text Header for Roam Research on import",
-                    action: { type: "input", placeholder: "Imported Tasks" },
-                },
-                {
-                    id: "ttt-account",
-                    name: "Account type",
-                    description: "Account type - turn on if subscribed to Todoist Premium",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-overdue",
-                    name: "Include Overdue",
-                    description: "Include tasks that are overdue in Today's tasks",
-                    action: { type: "switch" },
-                },
-                {
-                    id: "ttt-intermediate",
-                    name: "Show Intermediate options",
-                    description: "Show more configuration options",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setConfig(evt, 1); }
-                    },
-                },
-                {
-                    id: "ttt-advanced",
-                    name: "Show Advanced options (beta)",
-                    description: "Show advanced configuration options",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setConfig(evt, 2); }
-                    },
-                },
-                {
-                    id: "ttt-advChildFeat",
-                    name: "Advanced Sync features (beta)",
-                    description: "Turn on to automatically create tasks, subtasks and comments from within Roam Research",
-                    action: {
-                        type: "switch",
-                        onChange: (evt) => { setAdvFeat(evt); }
-                    },
-                },
-            ]
-        };
+        // Reset module state to prevent leaks across load/unload cycles
+        if (observer) { try { observer.disconnect(); } catch (_) {} }
+        observer = undefined;
+        targetNode1 = undefined;
+        targetNode2 = undefined;
+        obsConfig = undefined;
+        parentUid = undefined;
+        auto = false;
+        clearInterval(checkTDInterval);
+        checkTDInterval = 0;
+        checkEveryMinutes = 15;
+        isImportRunning = false;
+        completedStrikethrough = undefined;
 
-        // onload config options
-        if (extensionAPI.settings.get("ttt-intermediate")) {
-            if (extensionAPI.settings.get("ttt-advanced")) {
-                extensionAPI.settings.panel.create(config2);
-            } else {
-                extensionAPI.settings.panel.create(config1);
-            }
-        } else if (extensionAPI.settings.get("ttt-advanced")) {
-            extensionAPI.settings.panel.create(config3);
-        } else {
-            extensionAPI.settings.panel.create(config);
+        function ensureSettingBool(key, fallback) {
+            const val = extensionAPI.settings.get(key);
+            return (val === true || val === false) ? val : fallback;
         }
+
+        function buildSettingsConfig() {
+            const showIntermediate = ensureSettingBool("ttt-intermediate", false);
+            const showAdvanced = ensureSettingBool("ttt-advanced", false);
+
+            const rebuildPanel = () => {
+                setTimeout(() => {
+                    extensionAPI.settings.panel.create(buildSettingsConfig());
+                }, 60);
+            };
+
+            const settings = [
+                {
+                    id: "ttt-token",
+                    name: "Todoist API Token",
+                    description: "Your API token from https://todoist.com/app/settings/integrations",
+                    action: { type: "input", placeholder: "Add Todoist API token here" },
+                },
+                {
+                    id: "ttt-import-header",
+                    name: "Roam Research Header",
+                    description: "Text Header for Roam Research on import",
+                    action: { type: "input", placeholder: "Imported Tasks" },
+                },
+                {
+                    id: "ttt-account",
+                    name: "Account type",
+                    description: "Account type - turn on if subscribed to Todoist Premium",
+                    action: { type: "switch" },
+                },
+                {
+                    id: "ttt-overdue",
+                    name: "Include Overdue",
+                    description: "Include tasks that are overdue in Today's tasks",
+                    action: { type: "switch" },
+                },
+                {
+                    id: "ttt-intermediate",
+                    name: "Show Intermediate options",
+                    description: "Show more configuration options",
+                    action: {
+                        type: "switch",
+                        onChange: () => { rebuildPanel(); },
+                    },
+                },
+            ];
+
+            if (showIntermediate) {
+                settings.push(
+                    {
+                        id: "ttt-auto",
+                        name: "Automatic Download",
+                        description: "Import items to the DNP automatically",
+                        action: {
+                            type: "switch",
+                            onChange: (evt) => { setAuto(evt, 1); },
+                        },
+                    },
+                    {
+                        id: "ttt-auto-time",
+                        name: "Automatic Download interval",
+                        description: "Frequency in minutes to check for new items",
+                        action: {
+                            type: "input", placeholder: "15",
+                            onChange: (evt) => { setAuto(evt, 2); },
+                        },
+                    },
+                    {
+                        id: "ttt-completed",
+                        name: "Include Completed",
+                        description: "Include completed tasks in Today's tasks",
+                        action: { type: "switch" },
+                    },
+                    {
+                        id: "ttt-completedStrikethrough",
+                        name: "Strikethrough Completed Tasks",
+                        description: "Strikethrough task content upon completion",
+                        action: { type: "switch" },
+                    },
+                    {
+                        id: "ttt-description",
+                        name: "Description",
+                        description: "Import item description",
+                        action: { type: "switch" },
+                    },
+                    {
+                        id: "ttt-subtasks",
+                        name: "Subtasks",
+                        description: "Import item subtasks",
+                        action: { type: "switch" },
+                    },
+                    {
+                        id: "ttt-comments",
+                        name: "Comments",
+                        description: "Import item comments",
+                        action: { type: "switch" },
+                    },
+                    {
+                        id: "ttt-priority",
+                        name: "Priority",
+                        description: "Import item priority",
+                        action: { type: "switch" },
+                    },
+                    {
+                        id: "ttt-createLink",
+                        name: "Link in Created Task",
+                        description: "Create a link to the Roam block in newly created Todoist tasks",
+                        action: { type: "switch" },
+                    },
+                );
+            }
+            /*
+            settings.push({
+                id: "ttt-advanced",
+                name: "Show Advanced options (beta)",
+                description: "Show advanced configuration options",
+                action: {
+                    type: "switch",
+                    onChange: () => { rebuildPanel(); },
+                },
+            });
+
+            if (showAdvanced) {
+                settings.push({
+                    id: "ttt-advChildFeat",
+                    name: "Advanced Sync features (beta)",
+                    description: "Turn on to automatically create tasks, subtasks and comments from within Roam Research",
+                    action: {
+                        type: "switch",
+                        onChange: (evt) => { setAdvFeat(evt); },
+                    },
+                });
+            }
+            */
+
+            return {
+                tabTitle: "Todoist Task Management",
+                settings,
+            };
+        }
+
+        extensionAPI.settings.panel.create(buildSettingsConfig());
 
         extensionAPI.ui.commandPalette.addCommand({
             label: "Import tasks from Todoist",
@@ -499,17 +324,22 @@ export default {
         if (window.roamjs?.extension?.smartblocks) {
             window.roamjs.extension.smartblocks.registerCommand(args);
         } else {
+            smartblocksLoadedHandler = () =>
+                window.roamjs?.extension.smartblocks &&
+                window.roamjs.extension.smartblocks.registerCommand(args);
             document.body.addEventListener(
                 `roamjs:smartblocks:loaded`,
-                () =>
-                    window.roamjs?.extension.smartblocks &&
-                    window.roamjs.extension.smartblocks.registerCommand(args)
+                smartblocksLoadedHandler
             );
         }
 
         extensionAPI.ui.commandPalette.addCommand({
             label: "Create task in Todoist",
             callback: () => createTodoistTask(),
+        });
+        window.roamAlphaAPI.ui.slashCommand.addCommand({
+            label: "Create task in Todoist",
+            callback: () => { createTodoistTask(); },
         });
         extensionAPI.ui.commandPalette.addCommand({
             label: "Link a Todoist project",
@@ -563,10 +393,6 @@ export default {
             TodoistHeader = "Imported tasks";
         }
 
-        if (extensionAPI.settings.get("ttt-advChildFeat") == true) {
-            advancedChildManagement = true;
-        }
-
         // onchange
         async function setAuto(evt, i) {
             if (i == 1) {
@@ -580,52 +406,12 @@ export default {
             } else if (i == 2) {
                 if (evt.target.value != "") {
                     clearInterval(checkTDInterval);
-                    checkEveryMinutes = parseInt(evt.target.value);
+                    checkEveryMinutes = parseInt(evt.target.value, 10);
                     if (auto == true) {
                         autoDL();
                     }
                 } else {
                     clearInterval(checkTDInterval);
-                }
-            }
-        }
-
-        async function setAdvFeat(evt) {
-            if (evt.target.checked) {
-                advancedChildManagement = true;
-            } else {
-                advancedChildManagement = false;
-            }
-        }
-
-        async function setConfig(evt, i) {
-            if (i == 1) {
-                if (evt.target.checked) {
-                    if (extensionAPI.settings.get("ttt-advanced")) {
-                        extensionAPI.settings.panel.create(config2);
-                    } else {
-                        extensionAPI.settings.panel.create(config1);
-                    }
-                } else {
-                    if (extensionAPI.settings.get("ttt-advanced")) {
-                        extensionAPI.settings.panel.create(config3);
-                    } else {
-                        extensionAPI.settings.panel.create(config);
-                    }
-                }
-            } else if (i == 2) {
-                if (evt.target.checked) {
-                    if (extensionAPI.settings.get("ttt-intermediate")) {
-                        extensionAPI.settings.panel.create(config2);
-                    } else {
-                        extensionAPI.settings.panel.create(config3);
-                    }
-                } else {
-                    if (extensionAPI.settings.get("ttt-intermediate")) {
-                        extensionAPI.settings.panel.create(config1);
-                    } else {
-                        extensionAPI.settings.panel.create(config);
-                    }
                 }
             }
         }
@@ -640,6 +426,7 @@ export default {
         window.addEventListener('keydown', keyEventHandler, false);
 
         async function initiateObserver() {
+            if (observer) { try { observer.disconnect(); } catch (_) {} }
             targetNode1 = document.getElementsByClassName("roam-main")[0];
             targetNode2 = document.getElementById("right-sidebar");
             obsConfig = { attributes: false, childList: true, subtree: true };
@@ -703,12 +490,6 @@ export default {
                     TodoistGetDescription = extensionAPI.settings.get("ttt-description");
                     TodoistGetComments = extensionAPI.settings.get("ttt-comments");
                     TodoistGetSubtasks = extensionAPI.settings.get("ttt-subtasks");
-                    if (extensionAPI.settings.get("ttt-account")) {
-                        TodoistAccount = "Premium";
-                    } else {
-                        TodoistAccount = "Free";
-                    }
-
                     var projectIDText = "projectID: ";
                     var currentPageUID;
                     var DNP = false;
@@ -804,7 +585,7 @@ export default {
             console.info("setting automatic download");
             const regex = /^\d{1,2}$/;
             if (regex.test(extensionAPI.settings.get("ttt-auto-time"))) {
-                checkEveryMinutes = parseInt(extensionAPI.settings.get("ttt-auto-time"));
+                checkEveryMinutes = parseInt(extensionAPI.settings.get("ttt-auto-time"), 10);
             }
 
             await importTodoistTasks(auto);
@@ -815,7 +596,7 @@ export default {
         }
 
         async function moveTask(e) {
-            observer.disconnect();
+            if (observer) { try { observer.disconnect(); } catch (_) {} }
             var TodoistHeader;
             const myToken = extensionAPI.settings.get("ttt-token");
             if (!extensionAPI.settings.get("ttt-import-header")) {
@@ -824,7 +605,6 @@ export default {
                 TodoistHeader = extensionAPI.settings.get("ttt-import-header");
             }
             let uidArray = [];
-            const regex = /(\{\{\[\[TODO\]\]\}\})/;
             let uids = await roamAlphaAPI.ui.individualMultiselect.getSelectedUids(); // get multi-selection uids
 
             if (uids.length === 0) { // not a multi-select query
@@ -841,6 +621,7 @@ export default {
                     uidArray.push({ uid, text })
                 } else {
                     alert("You can't reschedule blocks without a Todoist task")
+                    initiateObserver();
                     return;
                 }
             } else {
@@ -860,6 +641,7 @@ export default {
                     title: "To which date?",
                 });
                 if (selectedDate.length < 1) {
+                    initiateObserver();
                     return;
                 }
                 let year = selectedDate.getFullYear();
@@ -875,7 +657,7 @@ export default {
                 }
 
                 var todoistDate = year + "-" + mm + "-" + dd;
-                var taskcontent = '{"due_date": "' + todoistDate + '"}';
+                var taskcontent = JSON.stringify({ due_date: todoistDate });
 
                 console.info("Rescheduling task(s) in Todoist")
                 var myHeaders = new Headers();
@@ -967,6 +749,7 @@ export default {
                         var startBlock = await window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
                         if (!startBlock) {
                             alert("Your cursor must be within a block to create as a task in Todoist")
+                            break breakme;
                         }
                     }
 
@@ -980,39 +763,37 @@ export default {
                     var projectIDText = "projectID: ";
 
                     const regexContent = /^\{\{\[\[TODO\]\]\}\}.+$/;
+                    var taskObj = {};
                     if (newTaskString != undefined) {
                         if (newTaskString.includes("{{[[TODO]]}}")) {
                             newTaskString1 = newTaskString.split("{{[[TODO]]}}");
-                            var taskString = '{"content": "' + newTaskString1[1].trim() + '"';
+                            taskObj.content = newTaskString1[1].trim();
                         } else {
-                            var taskString = '{"content": "' + newTaskString + '"';
+                            taskObj.content = newTaskString;
                         }
                         if (parentTaskTodoistId != undefined) {
-                            taskString += ', "parent_id": "' + parentTaskTodoistId + '"';
+                            taskObj.parent_id = parentTaskTodoistId;
                         }
                     } else if (regexContent.test(block[0][0].string)) {
                         var taskContent = block[0][0].string.split("{{[[TODO]]}}");
-                        var taskString = '{"content": "' + taskContent[1] + '"';
+                        taskObj.content = taskContent[1];
                     } else {
-                        var taskString = '{"content": "' + block[0][0].string + '"';
+                        taskObj.content = block[0][0].string;
                     }
                     var url = "https://api.todoist.com/api/v1/tasks";
 
                     const regex = /^\d{2}-\d{2}-\d{4}$/;
-                    const regex1 = /^https:\/\/roamresearch.com\/#\/(app|offline)\/\w+$/; //today's DNP
                     var uri = window.location.href;
                     if (regex.test(block[0]?.[0]?.parents[0]?.uid)) { // this is a DNP, set a due date
                         var dateString = block[0][0].parents[0].uid.split("-");
                         var todoistDate = dateString[2] + "-" + dateString[0] + "-" + dateString[1];
                         if (createLinkTodoist) {
-                            let roamUrl = uri + "/page/" + startBlock;
-                            taskString += ', "description": "' + roamUrl + '"';
+                            taskObj.description = uri + "/page/" + startBlock;
                         }
-                        taskString += ', "due_date": "' + todoistDate + '"}';
+                        taskObj.due_date = todoistDate;
                     } else if (block[0][0].parents[0].hasOwnProperty('children')) {
                         if (createLinkTodoist) {
-                            let roamUrl = window.location.href.slice(0, -9) + "" + startBlock;
-                            taskString += ', "description": "' + roamUrl + '"';
+                            taskObj.description = window.location.href.slice(0, -9) + "" + startBlock;
                         }
                         for (var i = 0; i < block[0][0].parents[0]?.children.length; i++) {
                             if (block[0][0].parents[0].children[i].string.match(projectIDText)) { // This is a project page, set a project_id
@@ -1020,11 +801,10 @@ export default {
                             }
                         }
                         if (projectID != undefined) {
-                            taskString += ', "project_id": "' + projectID + '"}';
-                        } else {
-                            taskString += '}';
+                            taskObj.project_id = projectID;
                         }
                     }
+                    var taskString = JSON.stringify(taskObj);
 
                     var myHeaders = new Headers();
                     var bearer = 'Bearer ' + myToken;
@@ -1037,6 +817,10 @@ export default {
                         body: taskString
                     };
                     const response = await fetch(url, requestOptions);
+                    if (!response.ok) {
+                        alert("Failed to create task in Todoist");
+                        break breakme;
+                    }
                     const myTasks = await response.text();
                     var task = JSON.parse(myTasks);
                     var newTaskString1 = "";
@@ -1044,7 +828,7 @@ export default {
                     newTaskString1 += "" + task.content + "";
                     newTaskString1 += " [Link](https://app.todoist.com/app/task/" + task.id + ")";
                     if (newTaskUid != undefined) {
-                        observer.disconnect();
+                        if (observer) { try { observer.disconnect(); } catch (_) {} }
                         await window.roamAlphaAPI.updateBlock({
                             block: {
                                 uid: newTaskUid,
@@ -1053,8 +837,10 @@ export default {
                         });
 
                         await sleep(100);
-                        observer.observe(targetNode1, obsConfig);
-                        observer.observe(targetNode2, obsConfig);
+                        if (observer) {
+                            observer.observe(targetNode1, obsConfig);
+                            observer.observe(targetNode2, obsConfig);
+                        }
                     } else {
                         await window.roamAlphaAPI.updateBlock({
                             block: {
@@ -1098,14 +884,22 @@ export default {
                         redirect: 'follow'
                     }
                     const response = await fetch(apiUrl, getOpts);
+                    if (!response.ok) {
+                        alert("Failed to fetch projects from Todoist");
+                        break breakme;
+                    }
                     var listData = await response.json();
                     var list = Array.isArray(listData) ? listData
                         : Array.isArray(listData?.results) ? listData.results
                         : [];
 
+                    function escapeHtml(s) {
+                        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                    }
                     let selectString = "<select><option value=\"\">Select</option>";
                     for (var i = 0; i < list.length; i++) {
-                        selectString += "<option value=\"" + list[i].id + "~" + list[i].name + "\">" + list[i].name + "</option>";
+                        var safeName = escapeHtml(list[i].name);
+                        selectString += "<option value=\"" + list[i].id + "~" + safeName + "\">" + safeName + "</option>";
                     }
                     selectString += "</select>";
                     var pId = await prompt2(1, selectString, null);
@@ -1212,9 +1006,15 @@ export default {
             }
             var gUrl = "https://api.todoist.com/api/v1/tasks/" + taskIDReopen;
             const gResponse = await fetch(gUrl, getOpts);
+            if (!gResponse.ok) {
+                alert("Failed to fetch task details from Todoist");
+                await sleep(50);
+                initiateObserver();
+                return;
+            }
             var gTask = await gResponse.text();
             var gTaskJSON = JSON.parse(gTask);
-            if (gTaskJSON.due.is_recurring == true) {
+            if (gTaskJSON.due?.is_recurring == true) {
                 alert("You can't un-complete a recurring task!");
                 /*
                 console.info("recurring task");
@@ -1301,7 +1101,7 @@ export default {
                 let url, urlC;
 
                 if (dateRegex.test(currentPageUID)) {
-                    const [dd, mm, yyyy] = currentPageUID.split("-");
+                    const [mm, dd, yyyy] = currentPageUID.split("-");
                     todoistDate = `${yyyy}-${mm}-${dd}`;
                     datedDNP = true;
                 }
@@ -1325,16 +1125,19 @@ export default {
                             : "https://api.todoist.com/api/v1/tasks/filter?query=Today";
                     }
                 }
-                
+
+                if (!url) {
+                    console.warn("todoist-task-management: no URL resolved for import, skipping");
+                    return;
+                }
+
                 let previousTasks = [];
                 if (extensionAPI.settings.get("ttt:tasks")) {
                     previousTasks = JSON.parse(extensionAPI.settings.get("ttt:tasks"));
                     extensionAPI.settings.set("ttt:tasks-lastsync", extensionAPI.settings.get("ttt:tasks"));
                     extensionAPI.settings.set("ttt:tasks-lastsync:time", Date.now());
                 }
-                let previousComments = [];
                 if (extensionAPI.settings.get("ttt:comments")) {
-                    previousComments = JSON.parse(extensionAPI.settings.get("ttt:comments"));
                     extensionAPI.settings.set("ttt:comments-lastsync", extensionAPI.settings.get("ttt:comments"));
                 }
 
@@ -1402,16 +1205,20 @@ export default {
                 
                 const myHeaders = new Headers();
                 myHeaders.append("Authorization", "Bearer " + myToken);
-                myHeaders.append("Content-Type", "application/json");
                 const requestOptions = { method: "GET", headers: myHeaders, redirect: "follow" };
                 
                 const resp = await fetch(url, requestOptions);
+                if (!resp.ok) {
+                    console.warn("todoist-task-management: task fetch failed", resp.status);
+                    return;
+                }
                 const activeTasksData = await resp.json();
                 const activeTasks = Array.isArray(activeTasksData) ? activeTasksData
                     : Array.isArray(activeTasksData?.results) ? activeTasksData.results
                     : [];
 
-                extensionAPI.settings.set("ttt:tasks", JSON.stringify(activeTasks));
+                const slimTasks = activeTasks.map(t => ({ id: t.id, parent_id: t.parent_id || null, content: t.content || "" }));
+                extensionAPI.settings.set("ttt:tasks", JSON.stringify(slimTasks));
                 extensionAPI.settings.set("ttt:tasks:time", Date.now());
                 
                 const activeParents = [];
@@ -1449,7 +1256,8 @@ export default {
                             : Array.isArray(completedJSON?.items) ? completedJSON.items
                             : Array.isArray(completedJSON) ? completedJSON
                             : [];
-                        extensionAPI.settings.set("ttt:tasksCompleted", JSON.stringify(completedJSON));
+                        const slimCompleted = completedItems.map(t => ({ id: t.id || t.task_id, content: t.content || "" }));
+                        extensionAPI.settings.set("ttt:tasksCompleted", JSON.stringify(slimCompleted));
                         extensionAPI.settings.set("ttt:tasksCompleted:time", Date.now());
                     } catch (e) {
                         console.warn("todoist-task-management: completed tasks fetch failed, skipping", e);
@@ -1511,7 +1319,7 @@ export default {
                                 else if (c.attachment.file_type === "image/jpeg" || c.attachment.file_type === "image/png") commentString = `![](${c.attachment.file_url})`;
                                 else if (c.attachment.file_type === "text/html") commentString = `${c.content} [Email Body](${c.attachment.file_url})`;
                             }
-                            commentString += ` [Link](https://todoist.com/showTask?id=${c.task_id}#comment-${c.id})`;
+                            commentString += ` [Link](https://app.todoist.com/app/task/${c.task_id}#comment-${c.id})`;
                             extras.push({ text: commentString, tID: c.task_id, ID: c.id });
                         }
                     }
@@ -1722,13 +1530,22 @@ export default {
         window.roamAlphaAPI.ui.blockContextMenu.removeCommand({
             label: "Reschedule task(s) in Todoist"
         });
+        window.roamAlphaAPI.ui.slashCommand.removeCommand({
+            label: "Create task in Todoist",
+        });
         if (window.roamjs?.extension?.smartblocks) {
             window.roamjs.extension.smartblocks.unregisterCommand("IMPORTTODOIST");
         };
+        if (smartblocksLoadedHandler) {
+            document.body.removeEventListener(`roamjs:smartblocks:loaded`, smartblocksLoadedHandler);
+            smartblocksLoadedHandler = undefined;
+        }
 
-        observer.disconnect();
+        if (observer) { try { observer.disconnect(); } catch (_) {} }
         window.removeEventListener('keydown', keyEventHandler, false);
         clearInterval(checkTDInterval);
+        const promptRoot = document.getElementById('todoist-prompt-root');
+        if (promptRoot) { window.ReactDOM.unmountComponentAtNode(promptRoot); promptRoot.remove(); }
     }
 }
 
