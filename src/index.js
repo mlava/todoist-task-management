@@ -653,9 +653,8 @@ export default {
                             var taskUrl = mutation.addedNodes[0]?.innerHTML.split("href=\"");
                             var taskUrl2 = taskUrl[1].split("\"");
                             taskUrl = taskUrl2[0];
-                            var taskData = mutation.addedNodes[0]?.innerHTML?.split("task/");
-                            var regex = /^(\d{9,10})/gm;
-                            var taskIDClose = taskData[1].match(regex);
+                            var taskIdMatch = mutation.addedNodes[0]?.innerHTML?.match(/todoist\.com\/(?:app\/task\/|showTask\?id=)([A-Za-z0-9_-]{6,}|\d{9,20})/);
+                            var taskIDClose = taskIdMatch ? [taskIdMatch[1]] : null;
                             var rrUID = mutation.target?.id?.slice(-9);
                             closeTask(taskIDClose, taskString, rrUID, taskUrl);
                         }
@@ -667,9 +666,8 @@ export default {
                             var taskUrl = mutation.addedNodes[0]?.innerHTML.split("href=\"");
                             var taskUrl2 = taskUrl[1].split("\"");
                             taskUrl = taskUrl2[0];
-                            var taskData = mutation.addedNodes[0]?.innerHTML?.split("task/");
-                            var regex = /^(\d{9,10})/gm;
-                            var taskIDReopen = taskData[1].match(regex);
+                            var taskIdMatch = mutation.addedNodes[0]?.innerHTML?.match(/todoist\.com\/(?:app\/task\/|showTask\?id=)([A-Za-z0-9_-]{6,}|\d{9,20})/);
+                            var taskIDReopen = taskIdMatch ? [taskIdMatch[1]] : null;
                             var rrUID = mutation.target?.id.slice(-9);
                             reopenTask(taskIDReopen, taskString, rrUID, taskUrl);
                         }
@@ -836,9 +834,10 @@ export default {
                     text = e["block-string"].toString();
                 } else { // command palette
                     uid = await window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                    text = await window.roamAlphaAPI.data.pull("[:block/string]", [":block/uid", startBlock]);
+                    var pullResult = await window.roamAlphaAPI.data.pull("[:block/string]", [":block/uid", uid]);
+                    text = pullResult?.[":block/string"] || "";
                 }
-                if (text.includes("Task?id=")) { // there's a Todoist task in this block, add uid and text to array
+                if (text.includes("Task?id=") || text.includes("app/task/")) { // there's a Todoist task in this block, add uid and text to array
                     uidArray.push({ uid, text })
                 } else {
                     alert("You can't reschedule blocks without a Todoist task")
@@ -848,7 +847,7 @@ export default {
                 for (var i = 0; i < uids.length; i++) {
                     var results = await window.roamAlphaAPI.data.pull("[:block/string]", [":block/uid", uids[i]]);
                     var text = results[":block/string"];
-                    if (text.includes("Task?id=")) { // there's a Todoist task in this block
+                    if (text.includes("Task?id=") || text.includes("app/task/")) { // there's a Todoist task in this block
                         let uid = uids[i].toString();
                         uidArray.push({ uid, text })
                     }
@@ -890,9 +889,10 @@ export default {
                 };
 
                 for (var j = 0; j < uidArray.length; j++) {
-                    var taskID = uidArray[j].text.slice(-11);
-                    taskID = taskID.slice(0, 10);
-                    var url = "https://api.todoist.com/rest/v2/tasks/" + taskID + "";
+                    var taskIdMatch = uidArray[j].text.match(/todoist\.com\/(?:app\/task\/|showTask\?id=)([A-Za-z0-9_-]{6,}|\d{9,20})/);
+                    if (!taskIdMatch) continue;
+                    var taskID = taskIdMatch[1];
+                    var url = "https://api.todoist.com/api/v1/tasks/" + taskID;
 
                     const response = await fetch(url, requestOptions);
                     if (!response.ok) {
@@ -996,7 +996,7 @@ export default {
                     } else {
                         var taskString = '{"content": "' + block[0][0].string + '"';
                     }
-                    var url = "https://api.todoist.com/rest/v2/tasks";
+                    var url = "https://api.todoist.com/api/v1/tasks";
 
                     const regex = /^\d{2}-\d{2}-\d{4}$/;
                     const regex1 = /^https:\/\/roamresearch.com\/#\/(app|offline)\/\w+$/; //today's DNP
@@ -1042,7 +1042,7 @@ export default {
                     var newTaskString1 = "";
                     newTaskString1 += "{{[[TODO]]}} ";
                     newTaskString1 += "" + task.content + "";
-                    newTaskString1 += " [Link](" + task.url + ")";
+                    newTaskString1 += " [Link](https://app.todoist.com/app/task/" + task.id + ")";
                     if (newTaskUid != undefined) {
                         observer.disconnect();
                         await window.roamAlphaAPI.updateBlock({
@@ -1087,7 +1087,7 @@ export default {
                     TodoistCompleted = extensionAPI.settings.get("ttt-completed");
                     completedStrikethrough = extensionAPI.settings.get("ttt-completedStrikethrough");
 
-                    var apiUrl = "https://api.todoist.com/rest/v2/projects";
+                    var apiUrl = "https://api.todoist.com/api/v1/projects?limit=200";
                     var myHeaders = new Headers();
                     var bearer = 'Bearer ' + myToken;
                     myHeaders.append("Authorization", bearer);
@@ -1098,7 +1098,10 @@ export default {
                         redirect: 'follow'
                     }
                     const response = await fetch(apiUrl, getOpts);
-                    var list = await response.json();
+                    var listData = await response.json();
+                    var list = Array.isArray(listData) ? listData
+                        : Array.isArray(listData?.results) ? listData.results
+                        : [];
 
                     let selectString = "<select><option value=\"\">Select</option>";
                     for (var i = 0; i < list.length; i++) {
@@ -1175,7 +1178,7 @@ export default {
                 headers: myHeaders,
                 redirect: 'follow'
             };
-            var url = "https://api.todoist.com/rest/v2/tasks/" + taskIDClose + "/close";
+            var url = "https://api.todoist.com/api/v1/tasks/" + taskIDClose + "/close";
             const response = await fetch(url, requestOptions);
             if (!response.ok) {
                 alert("Failed to complete task in Todoist");
@@ -1207,7 +1210,7 @@ export default {
                 headers: myHeaders,
                 redirect: 'follow'
             }
-            var gUrl = "https://api.todoist.com/rest/v2/tasks/" + taskIDReopen + "/";
+            var gUrl = "https://api.todoist.com/api/v1/tasks/" + taskIDReopen;
             const gResponse = await fetch(gUrl, getOpts);
             var gTask = await gResponse.text();
             var gTaskJSON = JSON.parse(gTask);
@@ -1233,7 +1236,7 @@ export default {
                 let newDateTime = new Date();
                 newDateTime.setHours(hr, min, 0, 0);
                 
-                var url = "https://api.todoist.com/sync/v9/sync/";
+                var url = "https://api.todoist.com/api/v1/sync";
                 var opts = {
                     method: 'POST',
                     headers: myHeaders,
@@ -1251,7 +1254,7 @@ export default {
                     headers: myHeaders,
                     redirect: 'follow'
                 };
-                var url = "https://api.todoist.com/rest/v2/tasks/" + taskIDReopen + "/reopen";
+                var url = "https://api.todoist.com/api/v1/tasks/" + taskIDReopen + "/reopen";
                 const response = await fetch(url, requestOptions);
                 if (!response.ok) {
                     alert("Failed to reopen task in Todoist");
@@ -1305,21 +1308,21 @@ export default {
 
                 if (DNP || auto) {
                     url = TodoistOverdue
-                        ? "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue"
-                        : "https://api.todoist.com/rest/v2/tasks?filter=Today";
+                        ? "https://api.todoist.com/api/v1/tasks/filter?query=Today|Overdue"
+                        : "https://api.todoist.com/api/v1/tasks/filter?query=Today";
                 } else if (projectID) {
                     url = Array.isArray(projectID)
-                        ? `https://api.todoist.com/rest/v2/tasks?project_id=${projectID[1]}`
-                        : `https://api.todoist.com/rest/v2/tasks?project_id=${projectID}`;
+                        ? `https://api.todoist.com/api/v1/tasks?project_id=${projectID[1]}&limit=200`
+                        : `https://api.todoist.com/api/v1/tasks?project_id=${projectID}&limit=200`;
                 } else if (datedDNP) {
                     const today = new Date();
                     const todayStr = `${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}-${today.getFullYear()}`;
                     if (currentPageUID !== todayStr) {
-                        url = `https://api.todoist.com/rest/v2/tasks?filter=${todoistDate}`;
+                        url = `https://api.todoist.com/api/v1/tasks/filter?query=${todoistDate}`;
                     } else {
                         url = TodoistOverdue
-                            ? "https://api.todoist.com/rest/v2/tasks?filter=Today|Overdue"
-                            : "https://api.todoist.com/rest/v2/tasks?filter=Today";
+                            ? "https://api.todoist.com/api/v1/tasks/filter?query=Today|Overdue"
+                            : "https://api.todoist.com/api/v1/tasks/filter?query=Today";
                     }
                 }
                 
@@ -1403,7 +1406,10 @@ export default {
                 const requestOptions = { method: "GET", headers: myHeaders, redirect: "follow" };
                 
                 const resp = await fetch(url, requestOptions);
-                const activeTasks = await resp.json();
+                const activeTasksData = await resp.json();
+                const activeTasks = Array.isArray(activeTasksData) ? activeTasksData
+                    : Array.isArray(activeTasksData?.results) ? activeTasksData.results
+                    : [];
 
                 extensionAPI.settings.set("ttt:tasks", JSON.stringify(activeTasks));
                 extensionAPI.settings.set("ttt:tasks:time", Date.now());
@@ -1436,11 +1442,19 @@ export default {
 
                     urlC = `https://api.todoist.com/api/v1/tasks/completed/by_completion_date?since=${encodeURIComponent(sinceLocal)}&until=${encodeURIComponent(untilLocal)}`;
 
-                    const cResp = await fetch(urlC, requestOptions);
-                    const completedJSON = await cResp.json();
-                    completedItems = completedJSON?.items || [];
-                    extensionAPI.settings.set("ttt:tasksCompleted", JSON.stringify(completedJSON));
-                    extensionAPI.settings.set("ttt:tasksCompleted:time", Date.now());
+                    try {
+                        const cResp = await fetch(urlC, requestOptions);
+                        const completedJSON = await cResp.json();
+                        completedItems = Array.isArray(completedJSON?.results) ? completedJSON.results
+                            : Array.isArray(completedJSON?.items) ? completedJSON.items
+                            : Array.isArray(completedJSON) ? completedJSON
+                            : [];
+                        extensionAPI.settings.set("ttt:tasksCompleted", JSON.stringify(completedJSON));
+                        extensionAPI.settings.set("ttt:tasksCompleted:time", Date.now());
+                    } catch (e) {
+                        console.warn("todoist-task-management: completed tasks fetch failed, skipping", e);
+                        completedItems = [];
+                    }
                 }
                 
                 const isDoneLineNode = (n) => (n?.text || "").includes("{{[[DONE]]}}");
@@ -1474,11 +1488,13 @@ export default {
                     return { text: txt, id };
                 }
                 async function fetchComments(taskId) {
-                    const url = `https://api.todoist.com/rest/v2/comments?task_id=${taskId}`;
+                    const url = `https://api.todoist.com/api/v1/comments?task_id=${taskId}`;
                     const r = await fetch(url, requestOptions);
                     if (!r.ok) return [];
                     const json = await r.json();
-                    return json;
+                    return Array.isArray(json) ? json
+                        : Array.isArray(json?.results) ? json.results
+                        : [];
                 }
                 async function buildExtras(task) {
                     const extras = [];
