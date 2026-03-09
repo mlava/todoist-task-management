@@ -6,8 +6,6 @@ This extension allows you to manage your Todoist tasks from within your Roam Res
 - Reorganised settings using progressive disclosure (Intermediate options toggle)
 - Various safety and performance improvements
 
-![image](https://user-images.githubusercontent.com/6857790/220472682-49fae7fb-ea5b-4cfa-b8f3-aa5953c99f99.png)
-
 ## Features
 
 1. **Import tasks** - automatically detects the date of a DNP and imports relevant tasks. Use the Command Palette command "Import tasks from Todoist", the keyboard shortcut Alt+Shift+I, or the SmartBlock command `<%IMPORTTODOIST%>`.
