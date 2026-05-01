@@ -276,16 +276,12 @@ export default {
                 importTodoistTasks(false, false).then(async (blocks) => {
                     if (uid == undefined) {
                         parentUid = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
-                        if (parentUid == null) { // check for log page
-                            var uri = window.location.href;
-                            const regex = /^https:\/\/roamresearch.com\/.+\/(app|offline)\/\w+$/; // log page
-                            if (regex.test(uri)) { // definitely a log page, so get the corresponding page uid
-                                var today = new Date();
-                                var dd = String(today.getDate()).padStart(2, '0');
-                                var mm = String(today.getMonth() + 1).padStart(2, '0');
-                                var yyyy = today.getFullYear();
-                                parentUid = mm + '-' + dd + '-' + yyyy;
-                            }
+                        if (parentUid == null) {
+                            // getOpenPageOrBlockUid() returns null on the daily notes log view.
+                            // Read today's DNP UID from the topmost log page in the DOM.
+                            parentUid = document
+                                .querySelector(".roam-log-page .rm-title-display-container[data-page-uid]")
+                                ?.getAttribute("data-page-uid");
                         }
                         var thisBlock = window.roamAlphaAPI.util.generateUID();
                         await window.roamAlphaAPI.createBlock({
@@ -347,16 +343,12 @@ export default {
                 linkTodoistProject().then(async (blocks) => {
                     if (blocks != null) {
                         var uid = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
-                        if (uid == null) { // check for log page
-                            var uri = window.location.href;
-                            const regex = /^https:\/\/roamresearch.com\/.+\/(app|offline)\/\w+$/; // log page
-                            if (regex.test(uri)) { // definitely a log page, so get the corresponding page uid
-                                var today = new Date();
-                                var dd = String(today.getDate()).padStart(2, '0');
-                                var mm = String(today.getMonth() + 1).padStart(2, '0');
-                                var yyyy = today.getFullYear();
-                                uid = mm + '-' + dd + '-' + yyyy;
-                            }
+                        if (uid == null) {
+                            // getOpenPageOrBlockUid() returns null on the daily notes log view.
+                            // Read today's DNP UID from the topmost log page in the DOM.
+                            uid = document
+                                .querySelector(".roam-log-page .rm-title-display-container[data-page-uid]")
+                                ?.getAttribute("data-page-uid");
                         }
                         var thisBlock = window.roamAlphaAPI.util.generateUID();
                         await window.roamAlphaAPI.createBlock({
@@ -536,25 +528,15 @@ export default {
                     } else {
                         var startBlock = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
                         if (!startBlock) {
-                            var uri = window.location.href;
-                            const regex = /^https:\/\/roamresearch.com\/#\/(app|offline)\/\w+$/; //today's DNP
-                            let logPage = document.getElementById("rm-log-container");
-                            if (logPage) {
-                                var today = new Date();
-                                var dd = String(today.getDate()).padStart(2, '0');
-                                var mm = String(today.getMonth() + 1).padStart(2, '0');
-                                var yyyy = today.getFullYear();
-                                startBlock = mm + '-' + dd + '-' + yyyy;
-                                DNP = true;
-                            }
-                            if (regex.test(uri)) { // this is Daily Notes for today
-                                var today = new Date();
-                                var dd = String(today.getDate()).padStart(2, '0');
-                                var mm = String(today.getMonth() + 1).padStart(2, '0');
-                                var yyyy = today.getFullYear();
-                                startBlock = mm + '-' + dd + '-' + yyyy;
-                                DNP = true;
-                            }
+                            // getOpenPageOrBlockUid() returns null on the daily notes log view.
+                            // Read today's DNP UID from the topmost log page in the DOM.
+                            // (Replaces both the prior getElementById("rm-log-container") check —
+                            // that ID does not exist in current Roam; the class is .roam-log-container —
+                            // and the URL-regex fallback.)
+                            startBlock = document
+                                .querySelector(".roam-log-page .rm-title-display-container[data-page-uid]")
+                                ?.getAttribute("data-page-uid");
+                            if (startBlock) DNP = true;
                         }
                         let q = `[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${startBlock}"]  ]`;
                         var info = await window.roamAlphaAPI.q(q);
@@ -647,8 +629,8 @@ export default {
                 let year = selectedDate.getFullYear();
                 var dd = String(selectedDate.getDate()).padStart(2, '0');
                 var mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
-                let newDate = mm + "-" + dd + "-" + year;
-                var titleDate = convertToRoamDate(newDate);
+                let newDate = window.roamAlphaAPI.util.dateToPageUid(selectedDate);
+                var titleDate = window.roamAlphaAPI.util.dateToPageTitle(selectedDate);
                 var page = await window.roamAlphaAPI.q(`[:find (pull ?e [:node/title]) :where [?e :block/uid "${newDate}"]]`);
                 if (page.length > 0 && page[0][0] != null) {
                     // there's already a page with this date
@@ -910,15 +892,11 @@ export default {
                         var projectText = "projectID: " + pId[0];
                         var startBlock = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
                         if (!startBlock) {
-                            var uri = window.location.href;
-                            const regex = /^https:\/\/roamresearch.com\/#\/(app|offline)\/\w+$/; //today's DNP
-                            if (uri.match(regex)) { // this is Daily Notes for today
-                                var today = new Date();
-                                var dd = String(today.getDate()).padStart(2, '0');
-                                var mm = String(today.getMonth() + 1).padStart(2, '0');
-                                var yyyy = today.getFullYear();
-                                startBlock = mm + '-' + dd + '-' + yyyy;
-                            }
+                            // getOpenPageOrBlockUid() returns null on the daily notes log view.
+                            // Read today's DNP UID from the topmost log page in the DOM.
+                            startBlock = document
+                                .querySelector(".roam-log-page .rm-title-display-container[data-page-uid]")
+                                ?.getAttribute("data-page-uid");
                         }
                         let q = `[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${startBlock}"]  ]`;
                         var info = await window.roamAlphaAPI.q(q);
@@ -1554,19 +1532,6 @@ function sendConfigAlert(key) {
     if (key == "API") {
         alert("Please set your API token in the configuration settings via the Roam Depot tab.");
     }
-}
-
-function convertToRoamDate(dateString) {
-    var parsedDate = dateString.split('-');
-    var year = parsedDate[2];
-    var month = Number(parsedDate[0]);
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    var monthName = months[month - 1];
-    var day = Number(parsedDate[1]);
-    let suffix = (day >= 4 && day <= 20) || (day >= 24 && day <= 30)
-        ? "th"
-        : ["st", "nd", "rd"][day % 10 - 1];
-    return "" + monthName + " " + day + suffix + ", " + year + "";
 }
 
 async function sleep(ms) {
